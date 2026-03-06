@@ -14,16 +14,16 @@ export class AdvancedArchiveManager {
     constructor() {
         this.isOpen = false;
         this.selectedGroups = new Set();
-        this.doctorCollege = null;  
+        this.doctorCollege = null;
         this.injectStyles();
         this.injectModal();
         this.setupListeners();
-        this._loadDoctorCollege(); 
+        this._loadDoctorCollege();
     }
 
     async _loadDoctorCollege() {
         try {
-            const db   = window.db;
+            const db = window.db;
             const auth = window.auth;
             const user = auth?.currentUser;
             if (!user) return;
@@ -229,14 +229,13 @@ export class AdvancedArchiveManager {
             <!-- Group Filter -->
             <div class="adv-input-group" id="advGroupSection" style="display:none;">
               <label class="adv-label">
-                <i class="fa-solid fa-users" style="margin-right:5px;color:#64748b;"></i> Filter by Group
-                <span style="font-weight:400;color:#94a3b8;font-size:12px;"> (optional)</span>
+                <i class="fa-solid fa-users" style="margin-right:5px;color:#64748b;"></i> Select Group(s)
+                <span style="font-weight:600;color:#ef4444;font-size:12px;"> * Required</span>
               </label>
               <div class="adv-group-container" id="advGroupChipsContainer">
                 <span class="adv-group-placeholder" id="advGroupPlaceholder">Click to select groups...</span>
               </div>
               <div class="adv-group-dropdown" id="advGroupDropdown"></div>
-              <div class="adv-hint">* Leave empty to export all groups</div>
             </div>
 
             <button id="btnGenerateExcel" class="adv-btn-primary">
@@ -257,9 +256,9 @@ export class AdvancedArchiveManager {
             this.isOpen = false;
         };
 
-        const today      = new Date();
+        const today = new Date();
         const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-        document.getElementById('advEndDate').value   = today.toISOString().split('T')[0];
+        document.getElementById('advEndDate').value = today.toISOString().split('T')[0];
         document.getElementById('advStartDate').value = firstOfMonth.toISOString().split('T')[0];
 
         document.getElementById('advLevelSelect').addEventListener('change', (e) => {
@@ -268,7 +267,7 @@ export class AdvancedArchiveManager {
 
         const subjectInput = document.getElementById('advSubjectInput');
         const showGroups = () => {
-            const level   = document.getElementById('advLevelSelect').value;
+            const level = document.getElementById('advLevelSelect').value;
             const subject = subjectInput.value.trim();
             if (level && subject) {
                 this._buildGroupDropdown(level);
@@ -276,7 +275,7 @@ export class AdvancedArchiveManager {
             }
         };
         subjectInput.addEventListener('change', showGroups);
-        subjectInput.addEventListener('input',  showGroups);
+        subjectInput.addEventListener('input', showGroups);
 
         document.getElementById('advGroupChipsContainer').addEventListener('click', () => {
             document.getElementById('advGroupDropdown').classList.toggle('open');
@@ -303,22 +302,23 @@ export class AdvancedArchiveManager {
         this._clearGroups();
         document.getElementById('advGroupSection').style.display = 'none';
 
-        // الكلية من instance أو fallback لـ window.subjectsData
+        const yearMap = { '1': 'first_year', '2': 'second_year', '3': 'third_year', '4': 'fourth_year' };
         let subs = [];
+
         if (this.doctorCollege) {
-            // جيب كل مواد الكلية بغض النظر عن الفرقة
             const allSubs = getAllSubjectsByCollege(this.doctorCollege);
-            // allSubs ممكن يكون object {1:[...], 2:[...]} أو array
+            // allSubs ممكن يكون { first_year: [...], second_year: [...] } أو array flat
             if (Array.isArray(allSubs)) {
+                // لو array flat → مفيش تقسيم بالفرقة في config، نعرض الكل
+                console.warn("getAllSubjectsByCollege returned a flat array — subjects not split by level.");
                 subs = allSubs;
             } else {
-                const map = { '1': 'first_year', '2': 'second_year', '3': 'third_year', '4': 'fourth_year' };
-                subs = allSubs[map[level]] || allSubs[level] || [];
+                // ✅ الحالة الصح: object مقسّم بالسنة → نجيب سنة الفرقة المختارة بس
+                subs = allSubs[yearMap[level]] || allSubs[level] || [];
             }
         } else {
-            // fallback القديم
-            const map = { '1': 'first_year', '2': 'second_year', '3': 'third_year', '4': 'fourth_year' };
-            subs = (window.subjectsData || {})[map[level]] || (window.subjectsData || {})[level] || [];
+            // fallback لو الكلية مش موجودة
+            subs = (window.subjectsData || {})[yearMap[level]] || (window.subjectsData || {})[level] || [];
         }
 
         subs.forEach(s => {
@@ -335,7 +335,6 @@ export class AdvancedArchiveManager {
         const dropdown = document.getElementById('advGroupDropdown');
         dropdown.innerHTML = '';
 
-        // تحديد حرف الكلية
         const collegeLetterMap = {
             "NURS": "N", "PT": "P", "PHARM": "C",
             "DENT": "D", "CS": "T", "BA": "B", "HS": "H"
@@ -343,9 +342,7 @@ export class AdvancedArchiveManager {
         const letter = collegeLetterMap[this.doctorCollege] || "N";
 
         const allGroups = [];
-        // مجموعات خاصة
         allGroups.push(`${level}${letter}1 GP`);
-        // مجموعات عادية 1 → 20
         for (let i = 1; i <= 20; i++) {
             allGroups.push(`${level}${letter}${i}`);
         }
@@ -403,8 +400,8 @@ export class AdvancedArchiveManager {
 
     _clearGroups() {
         this.selectedGroups = new Set();
-        const c  = document.getElementById('advGroupChipsContainer');
-        if (c)  c.querySelectorAll('.adv-chip').forEach(x => x.remove());
+        const c = document.getElementById('advGroupChipsContainer');
+        if (c) c.querySelectorAll('.adv-chip').forEach(x => x.remove());
         const ph = document.getElementById('advGroupPlaceholder');
         if (ph) ph.style.display = 'inline';
         const dd = document.getElementById('advGroupDropdown');
@@ -415,10 +412,8 @@ export class AdvancedArchiveManager {
     // open() — مع تأكيد جلب الكلية
     // ============================================
     async open() {
-        // لو الكلية لسه ما اتجبتش، حاول تجيبها
         if (!this.doctorCollege) await this._loadDoctorCollege();
 
-        // اعرض شارة الكلية
         const badgeBox = document.getElementById('collegeBadgeBox');
         if (badgeBox && this.doctorCollege) {
             badgeBox.innerHTML = `
@@ -440,27 +435,38 @@ export class AdvancedArchiveManager {
         if (!db) { alert("Error: Database not initialized."); return; }
 
         const startDateVal = document.getElementById('advStartDate').value;
-        const endDateVal   = document.getElementById('advEndDate').value;
-        const level        = document.getElementById('advLevelSelect').value;
-        const subject      = document.getElementById('advSubjectInput').value.trim();
-        const statusLog    = document.getElementById('advStatusLog');
-        const btn          = document.getElementById('btnGenerateExcel');
+        const endDateVal = document.getElementById('advEndDate').value;
+        const level = document.getElementById('advLevelSelect').value;
+        const subject = document.getElementById('advSubjectInput').value.trim();
+        const statusLog = document.getElementById('advStatusLog');
+        const btn = document.getElementById('btnGenerateExcel');
 
         if (!startDateVal || !endDateVal || !level || !subject) {
             statusLog.innerHTML = '<span style="color:#ef4444;">⚠️ Please fill in all fields.</span>';
             return;
         }
 
+        // ✅ التحقق من اختيار جروب واحد على الأقل — إجباري
+        if (this.selectedGroups.size === 0) {
+            statusLog.innerHTML = '<span style="color:#ef4444;">⚠️ Please select at least one group.</span>';
+            document.getElementById('advGroupChipsContainer').style.borderColor = '#ef4444';
+            setTimeout(() => {
+                document.getElementById('advGroupChipsContainer').style.borderColor = '';
+            }, 2000);
+            return;
+        }
+
         const start = new Date(startDateVal); start.setHours(0, 0, 0, 0);
-        const end   = new Date(endDateVal);   end.setHours(23, 59, 59, 999);
+        const end = new Date(endDateVal); end.setHours(23, 59, 59, 999);
 
         if (start > end) {
             statusLog.innerHTML = '<span style="color:#ef4444;">⚠️ Start date cannot be after end date.</span>';
             return;
         }
 
-        const filterGroups = this.selectedGroups.size > 0 ? new Set(this.selectedGroups) : null;
-        const college      = this.doctorCollege; // ← الكلية للفلتر
+        // الجروب دايمًا محدد (مش null)
+        const filterGroups = new Set(this.selectedGroups);
+        const college = this.doctorCollege;
 
         const origBtn = btn.innerHTML;
         btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> <span>Processing...</span>';
@@ -473,13 +479,12 @@ export class AdvancedArchiveManager {
             // ============================================
             statusLog.innerText = "Fetching attendance records...";
 
-            // بناء الـ query مع فلتر الكلية
             let attQuery;
             if (college) {
                 attQuery = query(
                     collection(db, "attendance"),
-                    where("subject",  "==", subject),
-                    where("college",  "==", college)
+                    where("subject", "==", subject),
+                    where("college", "==", college)
                 );
             } else {
                 attQuery = query(
@@ -491,23 +496,21 @@ export class AdvancedArchiveManager {
             const attSnap = await getDocs(attQuery);
             if (attSnap.empty) throw new Error("No records found for this subject in your college.");
 
-            let activeDatesSet   = new Set();
+            let activeDatesSet = new Set();
             let attendanceRecords = [];
-            let outsiderStudents  = {};
+            let outsiderStudents = {};
 
             attSnap.forEach(docSnap => {
                 const r = docSnap.data();
 
                 // فلتر التاريخ
-                const parts   = r.date.split('/');
+                const parts = r.date.split('/');
                 const recDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
                 if (recDate < start || recDate > end) return;
 
-                // فلتر الجروب (لو محدد)
-                if (filterGroups) {
-                    const rg = (r.group || '').toUpperCase().trim();
-                    if (!filterGroups.has(rg)) return;
-                }
+                // فلتر الجروب — دايمًا مفعّل
+                const rg = (r.group || '').toUpperCase().trim();
+                if (!filterGroups.has(rg)) return;
 
                 activeDatesSet.add(r.date);
                 attendanceRecords.push(r);
@@ -538,7 +541,7 @@ export class AdvancedArchiveManager {
                 stQuery = query(
                     collection(db, "students"),
                     where("academic_level", "==", level),
-                    where("college",        "==", college)  // ← فلتر الكلية
+                    where("college", "==", college)
                 );
             } else {
                 stQuery = query(
@@ -551,11 +554,11 @@ export class AdvancedArchiveManager {
 
             let masterMap = {};
             stSnap.forEach(docSnap => {
-                const s  = docSnap.data();
+                const s = docSnap.data();
                 const rg = (s.group || s.group_code || s.groupCode || '--').toUpperCase().trim();
 
-                // فلتر الجروب (لو محدد)
-                if (filterGroups && !filterGroups.has(rg)) return;
+                // فلتر الجروب — دايمًا مفعّل
+                if (!filterGroups.has(rg)) return;
 
                 masterMap[s.id] = {
                     id: s.id, name: s.name, group: rg,
@@ -603,26 +606,26 @@ export class AdvancedArchiveManager {
             statusLog.innerText = "Building Excel...";
 
             const total = sortedDates.length;
-            const rows  = [];
+            const rows = [];
 
             students.forEach((st, idx) => {
                 const present = st.presenceCount;
-                const absent  = total - present;
-                const pct     = total > 0 ? (present / total) * 100 : 0;
+                const absent = total - present;
+                const pct = total > 0 ? (present / total) * 100 : 0;
                 const doctors = Array.from(st.doctorsSeen).join(', ') || '--';
 
                 let rowRgb = 'FFFFFF';
-                if (pct < 50)      rowRgb = 'FEE2E2';
+                if (pct < 50) rowRgb = 'FEE2E2';
                 else if (pct < 75) rowRgb = 'FEF3C7';
-                else               rowRgb = 'DCFCE7';
+                else rowRgb = 'DCFCE7';
 
                 const base = {
                     fill: { fgColor: { rgb: rowRgb } },
                     border: {
-                        top:    { style: 'thin', color: { rgb: 'CBD5E1' } },
+                        top: { style: 'thin', color: { rgb: 'CBD5E1' } },
                         bottom: { style: 'thin', color: { rgb: 'CBD5E1' } },
-                        left:   { style: 'thin', color: { rgb: 'CBD5E1' } },
-                        right:  { style: 'thin', color: { rgb: 'CBD5E1' } }
+                        left: { style: 'thin', color: { rgb: 'CBD5E1' } },
+                        right: { style: 'thin', color: { rgb: 'CBD5E1' } }
                     },
                     alignment: { horizontal: 'center', vertical: 'center' },
                     font: { name: 'Arial', sz: 10 }
@@ -630,14 +633,14 @@ export class AdvancedArchiveManager {
                 const nameStyle = { ...base, alignment: { horizontal: 'right', vertical: 'center' } };
 
                 const row = {
-                    '#':            { v: idx + 1,  s: base },
-                    'Student ID':   { v: st.id,    s: base },
-                    'Student Name': { v: st.name,  s: nameStyle },
-                    'Group':        { v: st.group, s: base },
-                    'College':      { v: st.college || college || '--', s: base },
-                    'Attended':     { v: present,  s: base },
-                    'Absence':      { v: absent,   s: base },
-                    'Instructor':   { v: doctors,  s: base },
+                    '#': { v: idx + 1, s: base },
+                    'Student ID': { v: st.id, s: base },
+                    'Student Name': { v: st.name, s: nameStyle },
+                    'Group': { v: st.group, s: base },
+                    'College': { v: st.college || college || '--', s: base },
+                    'Attended': { v: present, s: base },
+                    'Absence': { v: absent, s: base },
+                    'Instructor': { v: doctors, s: base },
                 };
 
                 sortedDates.forEach(d => {
@@ -666,10 +669,8 @@ export class AdvancedArchiveManager {
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, 'Attendance Report');
 
-            const safeSubj  = subject.replace(/[/\\?*\[\]]/g, '_').substring(0, 25);
-            const grpSuffix = filterGroups
-                ? `_${Array.from(filterGroups).sort().join('-')}`
-                : '_AllGroups';
+            const safeSubj = subject.replace(/[/\\?*\[\]]/g, '_').substring(0, 25);
+            const grpSuffix = `_${Array.from(filterGroups).sort().join('-')}`;
             const colSuffix = college ? `_${college}` : '';
 
             XLSX.writeFile(wb,
