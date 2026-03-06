@@ -1,0 +1,896 @@
+// ========================================================
+// 🦅 نظام المصيدة المصفح (Bulletproof Backend) - V6.0
+// ========================================================
+
+const express = require('express');
+const admin = require('firebase-admin');
+const cors = require('cors');
+const bodyParser = require('body-parser');
+
+// 1. تهيئة الاتصال بفايربيس
+let serviceAccount;
+try {
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+        serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    } else {
+        serviceAccount = require('./serviceAccountKey.json');
+    }
+} catch (error) {
+    console.error("❌ Service Account Error - Check Env Vars", error);
+}
+
+if (!admin.apps.length) {
+    admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount)
+    });
+}
+
+const db = admin.firestore();
+const app = express();
+
+app.use(cors({ origin: true }));
+app.use(bodyParser.json());
+
+const COLLEGE_COORDS = { 
+    lat: 30.385873919506743, // ضع خط العرض الجديد
+    lng: 30.488794680472196  // ضع خط الطول الجديد
+}; 
+const MAX_DISTANCE_KM = 2.5; 
+
+// Middleware
+const verifyToken = async (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: "Missing Token" });
+    }
+    try {
+        const idToken = authHeader.split('Bearer ')[1];
+        req.user = await admin.auth().verifyIdToken(idToken);
+        next();
+    } catch (error) {
+        return res.status(403).json({ error: "Invalid Token" });
+    }
+};
+
+const verifyStaffRole = async (req, res, next) => {
+    // التحقق من الرتبة الموجودة داخل التوكن نفسه (مستحيل تزويرها)
+    const adminRole = req.user.adminRole; 
+    
+    if (adminRole === 'dean' || adminRole === 'doctor') {
+        next();
+    } else {
+        return res.status(403).json({ error: "Access Denied: Staff Only" });
+    }
+};
+
+function calculateDistance(lat1, lon1, lat2, lon2) {
+    if (!lat1 || !lon1 || !lat2 || !lon2) return 9999; // حماية من القيم الفارغة
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+}
+
+app.get('/', (req, res) => {
+    res.status(200).send("🦅 Nursing System Backend is Running (Bulletproof V6)");
+});
+
+// ========================================================
+// 🛡️ المصيدة السريعة (Fast Track Join) - Optimized V9.0
+// ========================================================
+app.post('/joinSessionSecure', verifyToken, async (req, res) => {
+    const perfStart = Date.now(); // لحساب وقت التنفيذ
+    try {
+        const studentUID = req.user.uid;
+        const { sessionDocID, gpsLat, gpsLng, deviceFingerprint, codeInput } = req.body;
+        const userIP = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+
+        if (!sessionDocID) return res.status(400).json({ error: "Missing Session ID" });
+
+        // 🚀 تسريع 1: جلب كل البيانات المطلوبة دفعة واحدة (Parallel)
+        const sessionRef = db.collection('active_sessions').doc(sessionDocID);
+        const studentRef = db.collection('user_registrations').doc(studentUID);
+        const sensitiveRef = db.collection('user_registrations').doc(studentUID).collection('sensitive_info').doc('main');
+        const participantRef = sessionRef.collection('participants').doc(studentUID);
+
+        // ننفذ كل الطلبات في نفس اللحظة
+        const [sessionSnap, studentSnap, sensitiveSnap, participantSnap] = await Promise.all([
+            sessionRef.get(),
+            studentRef.get(),
+            sensitiveRef.get(),
+            participantRef.get()
+        ]);
+
+        // 1️⃣ فحص وجود الجلسة والطالب
+        if (!sessionSnap.exists) return res.status(404).json({ error: "⛔ الجلسة غير موجودة." });
+        if (!studentSnap.exists) return res.status(404).json({ error: "بيانات الطالب غير موجودة." });
+
+        const sessionData = sessionSnap.data();
+        const sData = studentSnap.data();
+        const info = sData.registrationInfo || {};
+
+        const isEmailVerified = req.user.email_verified; // حالة تفعيل جوجل
+        const isManuallyVerified = (sData.status === 'verified' || sData.manual_verification === true); // حالة التفعيل اليدوي من القاعدة
+
+        if (!isEmailVerified && !isManuallyVerified) {
+             return res.status(403).json({ error: "⛔ الحساب غير مفعل! يرجى تأكيد الإيميل أو مراجعة شؤون الطلاب." });
+        }
+
+        // 2️⃣ التحقق من القواعد (Gatekeeping)
+        if (!sessionData.isActive || !sessionData.isDoorOpen) {
+            return res.status(403).json({ error: "🔒 الباب مغلق حالياً." });
+        }
+
+        // فحص الكود (مع حماية ضد القيم الفارغة)
+        if (sessionData.sessionCode && 
+            sessionData.sessionCode !== "------" && 
+            sessionData.sessionCode !== "PAUSED") {
+             if (!codeInput || String(codeInput).trim() !== String(sessionData.sessionCode).trim()) {
+                 return res.status(403).json({ error: "❌ كود الجلسة خاطئ." });
+             }
+        }
+
+        // 3️⃣ تحليل المصيدة (بدون تعطيل)
+        // حساب المسافة
+        let currentDist = calculateDistance(gpsLat, gpsLng, COLLEGE_COORDS.lat, COLLEGE_COORDS.lng);
+        let isLocationValid = (currentDist <= MAX_DISTANCE_KM);
+
+        // فحص الجهاز
+        let isDeviceMatch = true; 
+        const batch = db.batch(); // نجهز الباتش من الآن
+
+        if (sensitiveSnap.exists) {
+            const savedFP = sensitiveSnap.data().bound_device_id;
+            if (savedFP && savedFP !== "UNKNOWN_DEVICE" && savedFP !== deviceFingerprint) {
+                isDeviceMatch = false; 
+            }
+        } else {
+            // أول مرة: نربط الجهاز
+            batch.set(sensitiveRef, {
+                bound_device_id: deviceFingerprint || "UNKNOWN_DEVICE",
+                bound_at: admin.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+        }
+
+        // 4️⃣ تجهيز البيانات للحفظ
+        const trapReport = {
+            is_in_range: isLocationValid,
+            is_device_match: isDeviceMatch,
+            gps_success: (gpsLat !== 0 && gpsLng !== 0),
+            distance_km: Number(currentDist.toFixed(3)), // تحويل لرقم
+            ip_address: userIP,
+            device_id_used: deviceFingerprint || "NO_ID",
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            process_time_ms: Date.now() - perfStart // تسجيل سرعة المعالجة للمراقبة
+        };
+
+        let savedCount = participantSnap.exists ? (participantSnap.data().segment_count || 1) : 1;
+
+        // 5️⃣ تنفيذ عمليات الكتابة (Batch Execution)
+        
+        // أ. تحديث المشارك
+        batch.set(participantRef, {
+            id: info.studentID || "UNKNOWN",
+            name: info.fullName || "Student",
+            uid: studentUID,
+            level: info.level || "-",
+            group: info.group || "-",
+            status: "active",
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            trap_report: trapReport,
+            avatarClass: sData.avatarClass || "fa-user",
+            isUnruly: false,
+            isUniformViolation: false,
+            segment_count: savedCount
+        });
+
+        // ب. تحديث إحصائيات الطالب (Student Stats)
+        const subjectKey = (sessionData.allowedSubject || "General").replace(/[^\w\u0600-\u06FF]/g, '_'); // تنظيف اسم المادة
+        const statsRef = db.collection('student_stats').doc(studentUID);
+        
+        batch.set(statsRef, {
+            [`attended.${subjectKey}`]: admin.firestore.FieldValue.increment(1),
+            last_attendance: admin.firestore.FieldValue.serverTimestamp(),
+            fullName: info.fullName,
+            studentID: info.studentID,
+            group: info.group || "عام"
+        }, { merge: true });
+
+        // ج. تحديث بروفايل الطالب
+        batch.update(studentRef, {
+            attendanceCount: admin.firestore.FieldValue.increment(1)
+        });
+
+        // 🔥 إطلاق الباتش
+        await batch.commit();
+
+        console.log(`⚡ FastJoin: ${Date.now() - perfStart}ms | User: ${info.fullName}`);
+        res.status(200).json({ success: true, message: "تم تسجيل الحضور ✅" });
+
+    } catch (error) {
+        console.error("🔥 Join Error:", error);
+        res.status(500).json({ error: "خطأ في السيرفر حاول مجدداً" });
+    }
+});
+
+// ========================================================
+// 👨‍🏫 تسجيل الدكاترة (Secure Faculty Registration)
+// ========================================================
+app.post('/api/registerFaculty', async (req, res) => {
+    try {
+        const { email, password, fullName, gender, role, jobTitle, masterKey } = req.body;
+
+        // 1. جلب المفاتيح السرية من الداتابيز (المكان المحصن)
+        const keysDoc = await db.collection("system_keys").doc("registration_keys").get();
+        if (!keysDoc.exists) return res.status(500).json({ error: "المفاتيح غير مهيأة في السيرفر" });
+        
+        const serverKeys = keysDoc.data();
+
+        // 2. التحقق من المفتاح المرسل (Master Key)
+        let isValid = false;
+        if (role === 'dean' && masterKey === serverKeys.dean_key) isValid = true;
+        if (role === 'doctor' && masterKey === serverKeys.doctor_key) isValid = true;
+
+        if (!isValid) {
+            return res.status(403).json({ error: "🚫 المفتاح السري (Master Key) غير صحيح!" });
+        }
+
+        // 3. إنشاء الحساب في Firebase Auth
+        const userRecord = await admin.auth().createUser({
+            email,
+            password,
+            displayName: fullName,
+        });
+
+        // 4. 🔥 إضافة "الرتبة" داخل التوكن (Custom Claims)
+        // دي أهم خطوة: بتخلي الفايربيس "يختم" على حساب المستخدم إنه دكتور
+        await admin.auth().setCustomUserClaims(userRecord.uid, { 
+            adminRole: role // 'dean' or 'doctor'
+        });
+
+        // 5. حفظ البيانات في Firestore
+        await db.collection("faculty_members").doc(userRecord.uid).set({
+            fullName,
+            gender,
+            role,
+            jobTitle,
+            email,
+            isVerified: true,
+            registeredAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        res.status(200).json({ success: true, message: "تم تسجيل الحساب بنجاح" });
+
+    } catch (error) {
+        console.error("Faculty Reg Error:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ========================================================
+// 📝 تسجيل الحسابات (نظام محصن - V2.0)
+// ========================================================
+// ========================================================
+// 📝 تسجيل الحسابات (نظام محصن - V3.0 Final)
+// ========================================================
+app.post('/api/registerStudent', async (req, res) => {
+    
+    // 1️⃣ متغير التتبع: نحفظ فيه كود المستخدم لو تم إنشاؤه في Auth
+    // عشان نمسحه فوراً لو حصل أي خطأ في الداتابيز (Rollback)
+    let createdUserUID = null; 
+
+    try {
+        let { email, password, fullName, studentID, level, gender, group, deviceFingerprint } = req.body;
+
+        // 2️⃣ تنظيف وفحص البيانات الأساسية
+        if (!studentID || !email || !password || !fullName || !level || !gender) {
+            return res.status(400).json({ error: "بيانات ناقصة! يرجى ملء جميع الحقول المطلوبة." });
+        }
+        
+        // إزالة المسافات الزائدة (Sanitization)
+        const cleanID = studentID.toString().trim();
+        const cleanEmail = email.toString().trim();
+        const cleanName = fullName.toString().trim();
+
+        // ============================================================
+        // 🔒 [New] Strict Group Validation (Backend Enforcement)
+        // حماية الباك إند من تلاعب Postman أو تجاوز الفرونت إند
+        // ============================================================
+        let finalGroup = "عام";
+
+        if (group && group.trim() !== "") {
+            const groupUpper = group.toString().toUpperCase().trim();
+            
+            // 1. Regex Match: التأكد من الصيغة (رقم الفرقة + G + رقم المجموعة)
+            // أمثلة مقبولة: 1G1, 2G10, 4G5
+            const groupPattern = /^[1-4]G\d{1,2}$/;
+            
+            if (!groupPattern.test(groupUpper)) {
+                return res.status(400).json({ 
+                    error: "صيغة الجروب غير صحيحة. يجب أن تكون (رقم الفرقة + G + رقم المجموعة). مثال: 1G1" 
+                });
+            }
+
+            // 2. Level Match: التأكد أن الجروب يتبع نفس الفرقة المختارة
+            // مثال: لو الطالب اختار الفرقة 2، لازم الجروب يبدأ بـ 2
+            if (level && !groupUpper.startsWith(level.toString())) {
+                return res.status(400).json({ 
+                    error: `تضارب البيانات: اخترت الفرقة ${level} ولكن الجروب ${groupUpper} يتبع فرقة أخرى!` 
+                });
+            }
+
+            finalGroup = groupUpper; // اعتماد الجروب الصحيح
+        } else {
+            // لو مفيش جروب، نخليه "عام" (اختياري حسب سياسة الكلية)
+            finalGroup = "عام";
+        }
+        // ============================================================
+
+
+        // 3️⃣ فحص أولي: هل الكود الجامعي موجود مسبقاً؟
+        // بنعمل ده قبل ما ننشئ الحساب في جوجل عشان نوفر ريكوستات
+        const idCheck = await db.collection("taken_student_ids").doc(cleanID).get();
+        if (idCheck.exists) {
+            return res.status(409).json({ error: "هذا الكود الجامعي مسجل بالفعل!" });
+        }
+
+        // 4️⃣ إنشاء الحساب في Firebase Authentication
+        const userRecord = await admin.auth().createUser({
+            email: cleanEmail,
+            password: password,
+            displayName: cleanName,
+            emailVerified: false // الطالب لسه مش مفعل
+        });
+
+        // ✅ حفظنا الـ UID هنا عشان خطة الإنقاذ
+        createdUserUID = userRecord.uid;
+
+        // 5️⃣ تجهيز الكتابة في قاعدة البيانات (Firestore Batch)
+        // بنستخدم Batch عشان نكتب في 3 أماكن مرة واحدة، يا كله ينجح يا كله يفشل
+        const batch = db.batch();
+
+        // أ. حجز الكود الجامعي (لمنع التكرار)
+        batch.set(db.collection("taken_student_ids").doc(cleanID), {
+            saved_email: cleanEmail,
+            saved_name: cleanName,
+            saved_uid: createdUserUID,
+            timestamp: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        // ب. إنشاء ملف الطالب (بيانات عامة)
+        batch.set(db.collection("user_registrations").doc(createdUserUID), {
+            registrationInfo: { 
+                fullName: cleanName, 
+                studentID: cleanID, 
+                level: level.toString(), 
+                gender: gender, 
+                group: finalGroup 
+            },
+            role: "student",
+            attendanceCount: 0,
+            avatarClass: "fa-user-graduate",
+            status: "pending_verification",
+            accountCreated: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        // ج. البيانات الحساسة (بصمة الجهاز) - Secure Hardware Fingerprint
+        const safeFP = deviceFingerprint || "UNKNOWN_DEVICE";
+        
+        batch.set(db.collection("user_registrations").doc(createdUserUID).collection("sensitive_info").doc("main"), {
+            email: cleanEmail,
+            bound_device_id: safeFP, // ربط الجهاز بالحساب للأبد
+            created_via: "Secure_Backend_V3"
+        });
+
+        // 6️⃣ التنفيذ الفعلي (Commit)
+        await batch.commit();
+
+        // لو وصلنا هنا، يبقى العملية نجحت 100%
+        createdUserUID = null; // نلغي علامة الحذف لأن الحساب بقى سليم
+
+        res.status(200).json({ success: true, uid: userRecord.uid });
+
+    } catch (error) {
+        console.error("❌ Registration Failed:", error);
+
+        // ========================================================
+        // 🚨 ROLLBACK LOGIC (خطة الإنقاذ)
+        // ========================================================
+        // لو حصل أي خطأ (نت فصل، داتابيز وقعت) والحساب كان اتعمل في جوجل
+        // بنمسحه فوراً عشان الطالب ميقولش "الإيميل مستخدم" وهو ملوش بيانات
+        
+        if (createdUserUID) {
+            console.log(`⚠️ Rolling back... Deleting orphaned user: ${createdUserUID}`);
+            try {
+                await admin.auth().deleteUser(createdUserUID);
+                console.log("✅ Rollback Successful: Orphaned account deleted.");
+            } catch (rollbackError) {
+                console.error("💀 CRITICAL: Rollback failed! Manually check UID:", createdUserUID);
+            }
+        }
+
+        // تحويل أخطاء فايربيس لرسائل مفهومة
+        if (error.code === 'auth/email-already-in-use') {
+            return res.status(409).json({ error: "البريد الإلكتروني مستخدم بالفعل" });
+        }
+        if (error.code === 'auth/invalid-email') {
+            return res.status(400).json({ error: "صيغة البريد الإلكتروني غير صحيحة" });
+        }
+        if (error.code === 'auth/weak-password') {
+            return res.status(400).json({ error: "كلمة المرور ضعيفة جداً" });
+        }
+
+        res.status(500).json({ error: "فشل التسجيل: " + error.message });
+    }
+});
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🛡️ Server Running Port ${PORT}`));
+
+module.exports = app;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ========================================================
+// 🦅 نظام المصيدة المصفح (Bulletproof Backend) - V6.0
+// ========================================================
+
+const express = require('express');
+const admin = require('firebase-admin');
+const cors = require('cors');
+const bodyParser = require('body-parser');
+
+// 1. تهيئة الاتصال بفايربيس
+let serviceAccount;
+try {
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+        serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    } else {
+        serviceAccount = require('./serviceAccountKey.json');
+    }
+} catch (error) {
+    console.error("❌ Service Account Error - Check Env Vars", error);
+}
+
+if (!admin.apps.length) {
+    admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount)
+    });
+}
+
+const db = admin.firestore();
+const app = express();
+
+app.use(cors({ origin: true }));
+app.use(bodyParser.json());
+
+const COLLEGE_COORDS = { 
+    lat: 30.385873919506743, // ضع خط العرض الجديد
+    lng: 30.488794680472196  // ضع خط الطول الجديد
+}; 
+const MAX_DISTANCE_KM = 2.5; 
+
+// Middleware
+const verifyToken = async (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: "Missing Token" });
+    }
+    try {
+        const idToken = authHeader.split('Bearer ')[1];
+        req.user = await admin.auth().verifyIdToken(idToken);
+        next();
+    } catch (error) {
+        return res.status(403).json({ error: "Invalid Token" });
+    }
+};
+
+const verifyStaffRole = async (req, res, next) => {
+    // التحقق من الرتبة الموجودة داخل التوكن نفسه (مستحيل تزويرها)
+    const adminRole = req.user.adminRole; 
+    
+    if (adminRole === 'dean' || adminRole === 'doctor') {
+        next();
+    } else {
+        return res.status(403).json({ error: "Access Denied: Staff Only" });
+    }
+};
+
+function calculateDistance(lat1, lon1, lat2, lon2) {
+    if (!lat1 || !lon1 || !lat2 || !lon2) return 9999; // حماية من القيم الفارغة
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+}
+
+app.get('/', (req, res) => {
+    res.status(200).send("🦅 Nursing System Backend is Running (Bulletproof V6)");
+});
+
+// ========================================================
+// 🛡️ المصيدة السريعة (Fast Track Join) - Optimized V9.0
+// ========================================================
+app.post('/joinSessionSecure', verifyToken, async (req, res) => {
+    const perfStart = Date.now(); // لحساب وقت التنفيذ
+    try {
+        const studentUID = req.user.uid;
+        const { sessionDocID, gpsLat, gpsLng, deviceFingerprint, codeInput } = req.body;
+        const userIP = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+
+        if (!sessionDocID) return res.status(400).json({ error: "Missing Session ID" });
+
+        // 🚀 تسريع 1: جلب كل البيانات المطلوبة دفعة واحدة (Parallel)
+        const sessionRef = db.collection('active_sessions').doc(sessionDocID);
+        const studentRef = db.collection('user_registrations').doc(studentUID);
+        const sensitiveRef = db.collection('user_registrations').doc(studentUID).collection('sensitive_info').doc('main');
+        const participantRef = sessionRef.collection('participants').doc(studentUID);
+
+        // ننفذ كل الطلبات في نفس اللحظة
+        const [sessionSnap, studentSnap, sensitiveSnap, participantSnap] = await Promise.all([
+            sessionRef.get(),
+            studentRef.get(),
+            sensitiveRef.get(),
+            participantRef.get()
+        ]);
+
+        // 1️⃣ فحص وجود الجلسة والطالب
+        if (!sessionSnap.exists) return res.status(404).json({ error: "⛔ الجلسة غير موجودة." });
+        if (!studentSnap.exists) return res.status(404).json({ error: "بيانات الطالب غير موجودة." });
+
+        const sessionData = sessionSnap.data();
+        const sData = studentSnap.data();
+        const info = sData.registrationInfo || {};
+
+        const isEmailVerified = req.user.email_verified; // حالة تفعيل جوجل
+        const isManuallyVerified = (sData.status === 'verified' || sData.manual_verification === true); // حالة التفعيل اليدوي من القاعدة
+
+        if (!isEmailVerified && !isManuallyVerified) {
+             return res.status(403).json({ error: "⛔ الحساب غير مفعل! يرجى تأكيد الإيميل أو مراجعة شؤون الطلاب." });
+        }
+
+        // 2️⃣ التحقق من القواعد (Gatekeeping)
+        if (!sessionData.isActive || !sessionData.isDoorOpen) {
+            return res.status(403).json({ error: "🔒 الباب مغلق حالياً." });
+        }
+
+        // فحص الكود (مع حماية ضد القيم الفارغة)
+        if (sessionData.sessionCode && 
+            sessionData.sessionCode !== "------" && 
+            sessionData.sessionCode !== "PAUSED") {
+             if (!codeInput || String(codeInput).trim() !== String(sessionData.sessionCode).trim()) {
+                 return res.status(403).json({ error: "❌ كود الجلسة خاطئ." });
+             }
+        }
+
+        // 3️⃣ تحليل المصيدة (بدون تعطيل)
+        // حساب المسافة
+        let currentDist = calculateDistance(gpsLat, gpsLng, COLLEGE_COORDS.lat, COLLEGE_COORDS.lng);
+        let isLocationValid = (currentDist <= MAX_DISTANCE_KM);
+
+        // فحص الجهاز
+        // 🔐 فحص البصمة المزدوجة (تعديل جراحي)
+        let isDeviceMatch = true;
+        const batch = db.batch();
+
+        if (sensitiveSnap.exists) {
+            const sensData = sensitiveSnap.data();
+            // قراءة المصفوفة الجديدة، ولو مش موجودة نرجع للبصمة القديمة كنص
+            const allowed = sensData.allowed_devices || (sensData.bound_device_id ? [sensData.bound_device_id] : []);
+
+            // التأكد أن البصمة الحالية هي واحدة من الاثنين المسموح بهم
+            if (deviceFingerprint && !allowed.includes(deviceFingerprint)) {
+                isDeviceMatch = false;
+            }
+        } else {
+            // حالة مستخدم جديد لم يسجل أي جهاز بعد
+            batch.set(sensitiveRef, {
+                allowed_devices: [deviceFingerprint || "UNKNOWN_DEVICE"],
+                bound_at: admin.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+        }
+
+        // 4️⃣ تجهيز البيانات للحفظ
+        const trapReport = {
+            is_in_range: isLocationValid,
+            is_device_match: isDeviceMatch,
+            gps_success: (gpsLat !== 0 && gpsLng !== 0),
+            distance_km: Number(currentDist.toFixed(3)), // تحويل لرقم
+            ip_address: userIP,
+            device_id_used: deviceFingerprint || "NO_ID",
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            process_time_ms: Date.now() - perfStart // تسجيل سرعة المعالجة للمراقبة
+        };
+
+        let savedCount = participantSnap.exists ? (participantSnap.data().segment_count || 1) : 1;
+
+        // 5️⃣ تنفيذ عمليات الكتابة (Batch Execution)
+        
+        // أ. تحديث المشارك
+        batch.set(participantRef, {
+            id: info.studentID || "UNKNOWN",
+            name: info.fullName || "Student",
+            uid: studentUID,
+            level: info.level || "-",
+            group: info.group || "-",
+            status: "active",
+            isSuspicious: !isDeviceMatch,
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            trap_report: trapReport,
+            avatarClass: sData.avatarClass || "fa-user",
+            isUnruly: false,
+            isUniformViolation: false,
+            segment_count: savedCount
+        });
+
+        // ب. تحديث إحصائيات الطالب (Student Stats)
+        const subjectKey = (sessionData.allowedSubject || "General").replace(/[^\w\u0600-\u06FF]/g, '_'); // تنظيف اسم المادة
+        const statsRef = db.collection('student_stats').doc(studentUID);
+        
+        batch.set(statsRef, {
+            [`attended.${subjectKey}`]: admin.firestore.FieldValue.increment(1),
+            last_attendance: admin.firestore.FieldValue.serverTimestamp(),
+            fullName: info.fullName,
+            studentID: info.studentID,
+            group: info.group || "عام"
+        }, { merge: true });
+
+        // ج. تحديث بروفايل الطالب
+        batch.update(studentRef, {
+            attendanceCount: admin.firestore.FieldValue.increment(1)
+        });
+
+        // 🔥 إطلاق الباتش
+        await batch.commit();
+
+        console.log(`⚡ FastJoin: ${Date.now() - perfStart}ms | User: ${info.fullName}`);
+        res.status(200).json({ success: true, message: "تم تسجيل الحضور ✅" });
+
+    } catch (error) {
+        console.error("🔥 Join Error:", error);
+        res.status(500).json({ error: "خطأ في السيرفر حاول مجدداً" });
+    }
+});
+
+// ========================================================
+// 👨‍🏫 تسجيل الدكاترة (Secure Faculty Registration)
+// ========================================================
+app.post('/api/registerFaculty', async (req, res) => {
+    try {
+        const { email, password, fullName, gender, role, jobTitle, masterKey } = req.body;
+
+        // 1. جلب المفاتيح السرية من الداتابيز (المكان المحصن)
+        const keysDoc = await db.collection("system_keys").doc("registration_keys").get();
+        if (!keysDoc.exists) return res.status(500).json({ error: "المفاتيح غير مهيأة في السيرفر" });
+        
+        const serverKeys = keysDoc.data();
+
+        // 2. التحقق من المفتاح المرسل (Master Key)
+        let isValid = false;
+        if (role === 'dean' && masterKey === serverKeys.dean_key) isValid = true;
+        if (role === 'doctor' && masterKey === serverKeys.doctor_key) isValid = true;
+
+        if (!isValid) {
+            return res.status(403).json({ error: "🚫 المفتاح السري (Master Key) غير صحيح!" });
+        }
+
+        // 3. إنشاء الحساب في Firebase Auth
+        const userRecord = await admin.auth().createUser({
+            email,
+            password,
+            displayName: fullName,
+        });
+
+        // 4. 🔥 إضافة "الرتبة" داخل التوكن (Custom Claims)
+        // دي أهم خطوة: بتخلي الفايربيس "يختم" على حساب المستخدم إنه دكتور
+        await admin.auth().setCustomUserClaims(userRecord.uid, { 
+            adminRole: role // 'dean' or 'doctor'
+        });
+
+        // 5. حفظ البيانات في Firestore
+        await db.collection("faculty_members").doc(userRecord.uid).set({
+            fullName,
+            gender,
+            role,
+            jobTitle,
+            email,
+            isVerified: true,
+            registeredAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        res.status(200).json({ success: true, message: "تم تسجيل الحساب بنجاح" });
+
+    } catch (error) {
+        console.error("Faculty Reg Error:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ========================================================
+// 📝 تسجيل الحسابات (نظام محصن - V2.0)
+// ========================================================
+// ========================================================
+// 📝 تسجيل الحسابات (نظام محصن - V3.0 Final)
+// ========================================================
+app.post('/api/registerStudent', async (req, res) => {
+    
+    // 1️⃣ متغير التتبع: نحفظ فيه كود المستخدم لو تم إنشاؤه في Auth
+    // عشان نمسحه فوراً لو حصل أي خطأ في الداتابيز (Rollback)
+    let createdUserUID = null; 
+
+    try {
+        let { email, password, fullName, studentID, level, gender, group, deviceFingerprint } = req.body;
+
+        // 2️⃣ تنظيف وفحص البيانات الأساسية
+        if (!studentID || !email || !password || !fullName || !level || !gender) {
+            return res.status(400).json({ error: "بيانات ناقصة! يرجى ملء جميع الحقول المطلوبة." });
+        }
+        
+        // إزالة المسافات الزائدة (Sanitization)
+        const cleanID = studentID.toString().trim();
+        const cleanEmail = email.toString().trim();
+        const cleanName = fullName.toString().trim();
+
+        // ============================================================
+        // 🔒 [New] Strict Group Validation (Backend Enforcement)
+        // حماية الباك إند من تلاعب Postman أو تجاوز الفرونت إند
+        // ============================================================
+        let finalGroup = "عام";
+
+        if (group && group.trim() !== "") {
+            const groupUpper = group.toString().toUpperCase().trim();
+            
+            // 1. Regex Match: التأكد من الصيغة (رقم الفرقة + G + رقم المجموعة)
+            // أمثلة مقبولة: 1G1, 2G10, 4G5
+            const groupPattern = /^[1-4]G\d{1,2}$/;
+            
+            if (!groupPattern.test(groupUpper)) {
+                return res.status(400).json({ 
+                    error: "صيغة الجروب غير صحيحة. يجب أن تكون (رقم الفرقة + G + رقم المجموعة). مثال: 1G1" 
+                });
+            }
+
+            // 2. Level Match: التأكد أن الجروب يتبع نفس الفرقة المختارة
+            // مثال: لو الطالب اختار الفرقة 2، لازم الجروب يبدأ بـ 2
+            if (level && !groupUpper.startsWith(level.toString())) {
+                return res.status(400).json({ 
+                    error: `تضارب البيانات: اخترت الفرقة ${level} ولكن الجروب ${groupUpper} يتبع فرقة أخرى!` 
+                });
+            }
+
+            finalGroup = groupUpper; // اعتماد الجروب الصحيح
+        } else {
+            // لو مفيش جروب، نخليه "عام" (اختياري حسب سياسة الكلية)
+            finalGroup = "عام";
+        }
+        // ============================================================
+
+
+        // 3️⃣ فحص أولي: هل الكود الجامعي موجود مسبقاً؟
+        // بنعمل ده قبل ما ننشئ الحساب في جوجل عشان نوفر ريكوستات
+        const idCheck = await db.collection("taken_student_ids").doc(cleanID).get();
+        if (idCheck.exists) {
+            return res.status(409).json({ error: "هذا الكود الجامعي مسجل بالفعل!" });
+        }
+
+        // 4️⃣ إنشاء الحساب في Firebase Authentication
+        const userRecord = await admin.auth().createUser({
+            email: cleanEmail,
+            password: password,
+            displayName: cleanName,
+            emailVerified: false // الطالب لسه مش مفعل
+        });
+
+        // ✅ حفظنا الـ UID هنا عشان خطة الإنقاذ
+        createdUserUID = userRecord.uid;
+
+        // 5️⃣ تجهيز الكتابة في قاعدة البيانات (Firestore Batch)
+        // بنستخدم Batch عشان نكتب في 3 أماكن مرة واحدة، يا كله ينجح يا كله يفشل
+        const batch = db.batch();
+
+        // أ. حجز الكود الجامعي (لمنع التكرار)
+        batch.set(db.collection("taken_student_ids").doc(cleanID), {
+            saved_email: cleanEmail,
+            saved_name: cleanName,
+            saved_uid: createdUserUID,
+            timestamp: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        // ب. إنشاء ملف الطالب (بيانات عامة)
+        batch.set(db.collection("user_registrations").doc(createdUserUID), {
+            registrationInfo: { 
+                fullName: cleanName, 
+                studentID: cleanID, 
+                level: level.toString(), 
+                gender: gender, 
+                group: finalGroup 
+            },
+            role: "student",
+            attendanceCount: 0,
+            avatarClass: "fa-user-graduate",
+            status: "pending_verification",
+            accountCreated: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        // ج. البيانات الحساسة (بصمة الجهاز) - Secure Hardware Fingerprint
+        const safeFP = deviceFingerprint || "UNKNOWN_DEVICE";
+        
+        batch.set(db.collection("user_registrations").doc(createdUserUID).collection("sensitive_info").doc("main"), {
+            email: cleanEmail,
+            bound_device_id: safeFP, // ربط الجهاز بالحساب للأبد
+            created_via: "Secure_Backend_V3"
+        });
+
+        // 6️⃣ التنفيذ الفعلي (Commit)
+        await batch.commit();
+
+        // لو وصلنا هنا، يبقى العملية نجحت 100%
+        createdUserUID = null; // نلغي علامة الحذف لأن الحساب بقى سليم
+
+        res.status(200).json({ success: true, uid: userRecord.uid });
+
+    } catch (error) {
+        console.error("❌ Registration Failed:", error);
+
+        // ========================================================
+        // 🚨 ROLLBACK LOGIC (خطة الإنقاذ)
+        // ========================================================
+        // لو حصل أي خطأ (نت فصل، داتابيز وقعت) والحساب كان اتعمل في جوجل
+        // بنمسحه فوراً عشان الطالب ميقولش "الإيميل مستخدم" وهو ملوش بيانات
+        
+        if (createdUserUID) {
+            console.log(`⚠️ Rolling back... Deleting orphaned user: ${createdUserUID}`);
+            try {
+                await admin.auth().deleteUser(createdUserUID);
+                console.log("✅ Rollback Successful: Orphaned account deleted.");
+            } catch (rollbackError) {
+                console.error("💀 CRITICAL: Rollback failed! Manually check UID:", createdUserUID);
+            }
+        }
+
+        // تحويل أخطاء فايربيس لرسائل مفهومة
+        if (error.code === 'auth/email-already-in-use') {
+            return res.status(409).json({ error: "البريد الإلكتروني مستخدم بالفعل" });
+        }
+        if (error.code === 'auth/invalid-email') {
+            return res.status(400).json({ error: "صيغة البريد الإلكتروني غير صحيحة" });
+        }
+        if (error.code === 'auth/weak-password') {
+            return res.status(400).json({ error: "كلمة المرور ضعيفة جداً" });
+        }
+
+        res.status(500).json({ error: "فشل التسجيل: " + error.message });
+    }
+});
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🛡️ Server Running Port ${PORT}`));
+
+module.exports = app;
+
+
+
+
+
+
+
+
