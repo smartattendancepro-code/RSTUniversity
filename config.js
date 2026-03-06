@@ -158,7 +158,7 @@ export const COLLEGE_SUBJECTS = {
     "PT": {
         "first_year": ["علاج طبيعي"],
         "second_year": ["قلب"],
-        "third_year": [],
+        "third_year": ["كيمياء"],
         "fourth_year": [],
         "fifth_year": []
     },

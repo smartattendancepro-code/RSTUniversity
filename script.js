@@ -637,7 +637,6 @@ document.addEventListener('click', (e) => {
     window.subjectsData = {};
     localStorage.removeItem('subjectsData_v4');
 
-    // جلب كلية الدكتور وملء البيانات
     (async () => {
         try {
             const user = auth.currentUser;
@@ -651,7 +650,6 @@ document.addEventListener('click', (e) => {
                     subjectsData = getAllSubjectsByCollege(doctorCollege);
                     window.subjectsData = subjectsData;
 
-                    // إعادة رسم القاعات بعد ما البيانات اتحملت
                     renderHallOptions();
                     console.log("✅ College Data Loaded:", doctorCollege);
                 }
@@ -1517,6 +1515,7 @@ document.addEventListener('click', (e) => {
                     studentID: info.studentID,
                     level: info.level,
                     gender: info.gender,
+                    group: info.group || "",
                     avatarClass: userData.avatarClass || info.avatarClass || "fa-user-graduate",
                     status_message: userData.status_message || "",
                     uid: user.uid,
@@ -3649,6 +3648,27 @@ document.addEventListener('click', (e) => {
                 const cData = JSON.parse(cachedProfileData);
                 if (cData.uid === user.uid) {
                     document.getElementById('profFullName').innerText = cData.fullName || "--";
+
+                    // ← أضف هنا
+                    const COLLEGE_NAME_MAP = {
+                        'N': 'Nursing', 'P': 'Physical Therapy', 'C': 'Pharmacy',
+                        'D': 'Dentistry', 'T': 'Computer Science', 'B': 'Business Admin', 'H': 'Health Sciences'
+                    };
+                    const grp = cData.group || "";
+                    const letter = grp.length >= 2 ? grp[1].toUpperCase() : 'N';
+                    const roleEl = document.querySelector('.pro-role');
+                    if (roleEl) {
+                        roleEl.innerHTML = `
+        <span style="font-size:13px; font-weight:800; font-family:'Outfit', sans-serif;">
+            ${COLLEGE_NAME_MAP[letter] || 'Nursing'} Student
+        </span><br>
+        <span style="font-size:13px; color:#0ea5e9; font-weight:900; 
+                     background:#e0f2fe; padding:2px 10px; border-radius:20px; 
+                     display:inline-block; margin-top:4px; font-family:'Outfit', sans-serif;">
+            ${grp || "--"}
+        </span>`;
+                    }
+
                     document.getElementById('profStudentID').innerText = cData.studentID || "--";
                     document.getElementById('profLevel').innerText = `الفرقة ${cData.level || '?'}`;
                     document.getElementById('profGender').innerText = cData.gender || "--";
@@ -5278,6 +5298,8 @@ document.addEventListener('click', (e) => {
             btn.style.pointerEvents = 'auto';
         }
     };
+
+
 
     window.checkForPendingSurveys = async function () {
         const user = auth.currentUser;
