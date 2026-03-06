@@ -3703,6 +3703,36 @@ document.addEventListener('click', (e) => {
             const info = data.registrationInfo || data;
 
             document.getElementById('profFullName').innerText = info.fullName || "--";
+
+            const COLLEGE_NAME_MAP = {
+                'N': 'Nursing',
+                'P': 'Physical Therapy',
+                'C': 'Pharmacy',
+                'D': 'Dentistry',
+                'T': 'Computer Science',
+                'B': 'Business Admin',
+                'H': 'Health Sciences'
+            };
+
+            const studentGroup = info.group || "";
+            const collegeLetter = studentGroup.length >= 2 ? studentGroup[1].toUpperCase() : 'N';
+            const collegeName = COLLEGE_NAME_MAP[collegeLetter] || "Nursing";
+
+            const roleEl = document.querySelector('.pro-role');
+            if (roleEl) {
+                roleEl.innerHTML = `
+        <span style="font-size:13px; font-weight:800; font-family:'Outfit', sans-serif;">
+            ${collegeName} Student
+        </span>
+        <br>
+        <span style="font-size:13px; color:#0ea5e9; font-weight:900; 
+                     background:#e0f2fe; padding:2px 10px; border-radius:20px; 
+                     display:inline-block; margin-top:4px;
+                     font-family:'Outfit', sans-serif;">
+            ${studentGroup || "--"}
+        </span>
+    `;
+            }
             document.getElementById('profStudentID').innerText = info.studentID || "--";
             document.getElementById('profLevel').innerText = `الفرقة ${info.level || '?'}`;
             document.getElementById('profGender').innerText = info.gender || "--";
