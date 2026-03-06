@@ -2,17 +2,40 @@ import {
     collection,
     query,
     where,
-    getDocs
+    getDocs,
+    doc,
+    getDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+import { getAllSubjectsByCollege } from './config.js';
 
 export class AdvancedArchiveManager {
 
     constructor() {
         this.isOpen = false;
         this.selectedGroups = new Set();
+        this.doctorCollege = null;  
         this.injectStyles();
         this.injectModal();
         this.setupListeners();
+        this._loadDoctorCollege(); 
+    }
+
+    async _loadDoctorCollege() {
+        try {
+            const db   = window.db;
+            const auth = window.auth;
+            const user = auth?.currentUser;
+            if (!user) return;
+
+            const snap = await getDoc(doc(db, "faculty_members", user.uid));
+            if (snap.exists()) {
+                this.doctorCollege = snap.data().college || "NURS";
+                console.log("🏫 Archive: Doctor College =", this.doctorCollege);
+            }
+        } catch (e) {
+            console.warn("Archive: College fetch failed", e);
+        }
     }
 
     injectStyles() {
@@ -30,7 +53,6 @@ export class AdvancedArchiveManager {
                 display: flex; align-items: center; justify-content: center;
                 opacity: 0; animation: fadeIn 0.3s forwards;
             }
-
             .adv-modal-card {
                 background: #ffffff;
                 width: 95%; max-width: 480px;
@@ -42,28 +64,23 @@ export class AdvancedArchiveManager {
                 position: relative;
                 max-height: 90vh; overflow-y: auto;
             }
-
             .adv-header {
                 display: flex; justify-content: space-between; align-items: flex-start;
                 margin-bottom: 24px;
             }
             .adv-title { font-size: 22px; font-weight: 700; color: #1e293b; letter-spacing: -0.5px; }
             .adv-subtitle { font-size: 13px; color: #64748b; margin-top: 4px; font-weight: 400; }
-
             .adv-close-btn {
                 background: #f1f5f9; border: none; width: 32px; height: 32px;
                 border-radius: 50%; color: #64748b; cursor: pointer;
                 transition: all 0.2s; display: flex; align-items: center; justify-content: center;
             }
             .adv-close-btn:hover { background: #e2e8f0; color: #0f172a; transform: rotate(90deg); }
-
             .adv-label {
                 font-size: 13px; font-weight: 600; color: #334155;
                 margin-bottom: 8px; display: block;
             }
-
             .adv-input-group { margin-bottom: 20px; }
-
             .adv-input {
                 width: 100%;
                 padding: 12px 16px;
@@ -77,28 +94,20 @@ export class AdvancedArchiveManager {
                 box-sizing: border-box;
             }
             .adv-input:focus {
-                outline: none;
-                background: #ffffff;
+                outline: none; background: #ffffff;
                 border-color: #3b82f6;
                 box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
             }
-
             .adv-date-row { display: flex; gap: 12px; }
-
-            /* GROUP CHIPS */
             .adv-group-container {
-                border: 1px solid #e2e8f0;
-                border-radius: 12px;
-                background: #f8fafc;
-                padding: 10px 12px;
+                border: 1px solid #e2e8f0; border-radius: 12px;
+                background: #f8fafc; padding: 10px 12px;
                 display: flex; flex-wrap: wrap; gap: 8px;
                 min-height: 46px; align-items: center;
-                cursor: pointer;
-                transition: border-color 0.2s;
+                cursor: pointer; transition: border-color 0.2s;
             }
             .adv-group-container:hover { border-color: #3b82f6; }
             .adv-group-placeholder { color: #94a3b8; font-size: 13px; }
-
             .adv-chip {
                 background: #dbeafe; color: #1d4ed8;
                 border-radius: 20px; padding: 3px 10px;
@@ -107,26 +116,18 @@ export class AdvancedArchiveManager {
             }
             .adv-chip-x {
                 cursor: pointer; font-weight: 900;
-                color: #1d4ed8; opacity: 0.6; font-size: 14px;
-                line-height: 1;
+                color: #1d4ed8; opacity: 0.6; font-size: 14px; line-height: 1;
             }
             .adv-chip-x:hover { opacity: 1; }
-
             .adv-group-dropdown {
-                display: none;
-                border: 1px solid #e2e8f0;
-                border-radius: 12px;
-                background: #fff;
-                max-height: 180px;
-                overflow-y: auto;
-                margin-top: 6px;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+                display: none; border: 1px solid #e2e8f0;
+                border-radius: 12px; background: #fff;
+                max-height: 180px; overflow-y: auto;
+                margin-top: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);
             }
             .adv-group-dropdown.open { display: block; }
-
             .adv-group-option {
-                padding: 10px 14px;
-                font-size: 13px; font-weight: 600;
+                padding: 10px 14px; font-size: 13px; font-weight: 600;
                 color: #334155; cursor: pointer;
                 border-bottom: 1px solid #f1f5f9;
                 display: flex; align-items: center; gap: 8px;
@@ -135,22 +136,13 @@ export class AdvancedArchiveManager {
             .adv-group-option:last-child { border-bottom: none; }
             .adv-group-option:hover { background: #f0f9ff; color: #1d4ed8; }
             .adv-group-option.selected { background: #eff6ff; color: #1d4ed8; }
-
             .adv-chk {
                 width: 16px; height: 16px; flex-shrink: 0;
                 border: 2px solid #cbd5e1; border-radius: 4px;
-                display: flex; align-items: center; justify-content: center;
-                font-size: 10px;
+                display: flex; align-items: center; justify-content: center; font-size: 10px;
             }
-            .adv-group-option.selected .adv-chk {
-                background: #2563eb; border-color: #2563eb; color: #fff;
-            }
-
-            .adv-hint {
-                font-size: 11px; color: #94a3b8;
-                margin-top: 5px; font-style: italic;
-            }
-
+            .adv-group-option.selected .adv-chk { background: #2563eb; border-color: #2563eb; color: #fff; }
+            .adv-hint { font-size: 11px; color: #94a3b8; margin-top: 5px; font-style: italic; }
             .adv-btn-primary {
                 width: 100%; padding: 14px; border: none; border-radius: 14px;
                 background: linear-gradient(135deg, #2563eb, #1d4ed8);
@@ -164,16 +156,22 @@ export class AdvancedArchiveManager {
                 box-shadow: 0 10px 15px -3px rgba(37,99,235,0.3);
             }
             .adv-btn-primary:active { transform: translateY(0); }
-
             .adv-status {
                 margin-top: 16px; font-size: 13px; color: #64748b;
                 text-align: center; min-height: 20px; font-weight: 500;
             }
-
+            /* شارة الكلية */
+            .college-badge {
+                display: inline-flex; align-items: center; gap: 6px;
+                background: #e0f2fe; color: #0369a1;
+                padding: 4px 10px; border-radius: 20px;
+                font-size: 11px; font-weight: 800;
+                border: 1px solid #bae6fd;
+                margin-bottom: 16px;
+            }
             @keyframes fadeIn { to { opacity: 1; } }
             @keyframes zoomIn { to { transform: scale(1); } }
         `;
-
         const tag = document.createElement('style');
         tag.id = styleId;
         tag.textContent = css;
@@ -196,6 +194,9 @@ export class AdvancedArchiveManager {
                 <i class="fa-solid fa-xmark"></i>
               </button>
             </div>
+
+            <!-- شارة الكلية -->
+            <div id="collegeBadgeBox"></div>
 
             <!-- Date Range -->
             <div class="adv-input-group">
@@ -225,7 +226,7 @@ export class AdvancedArchiveManager {
               <datalist id="advSubjectList"></datalist>
             </div>
 
-            <!-- Group Filter (hidden until subject chosen) -->
+            <!-- Group Filter -->
             <div class="adv-input-group" id="advGroupSection" style="display:none;">
               <label class="adv-label">
                 <i class="fa-solid fa-users" style="margin-right:5px;color:#64748b;"></i> Filter by Group
@@ -256,27 +257,18 @@ export class AdvancedArchiveManager {
             this.isOpen = false;
         };
 
-        const today = new Date();
+        const today      = new Date();
         const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-        document.getElementById('advEndDate').value = today.toISOString().split('T')[0];
+        document.getElementById('advEndDate').value   = today.toISOString().split('T')[0];
         document.getElementById('advStartDate').value = firstOfMonth.toISOString().split('T')[0];
 
         document.getElementById('advLevelSelect').addEventListener('change', (e) => {
-            const level = e.target.value;
-            const dl = document.getElementById('advSubjectList');
-            dl.innerHTML = '';
-            document.getElementById('advSubjectInput').value = '';
-            this._clearGroups();
-            document.getElementById('advGroupSection').style.display = 'none';
-
-            const map = { '1': 'first_year', '2': 'second_year', '3': 'third_year', '4': 'fourth_year' };
-            const subs = (window.subjectsData || {})[map[level]] || (window.subjectsData || {})[level] || [];
-            subs.forEach(s => { const o = document.createElement('option'); o.value = s; dl.appendChild(o); });
+            this._onLevelChange(e.target.value);
         });
 
         const subjectInput = document.getElementById('advSubjectInput');
         const showGroups = () => {
-            const level = document.getElementById('advLevelSelect').value;
+            const level   = document.getElementById('advLevelSelect').value;
             const subject = subjectInput.value.trim();
             if (level && subject) {
                 this._buildGroupDropdown(level);
@@ -284,7 +276,7 @@ export class AdvancedArchiveManager {
             }
         };
         subjectInput.addEventListener('change', showGroups);
-        subjectInput.addEventListener('input', showGroups);
+        subjectInput.addEventListener('input',  showGroups);
 
         document.getElementById('advGroupChipsContainer').addEventListener('click', () => {
             document.getElementById('advGroupDropdown').classList.toggle('open');
@@ -301,20 +293,62 @@ export class AdvancedArchiveManager {
         });
     }
 
+    // ============================================
+    // عند تغيير الفرقة → جيب المواد حسب الكلية
+    // ============================================
+    _onLevelChange(level) {
+        const dl = document.getElementById('advSubjectList');
+        dl.innerHTML = '';
+        document.getElementById('advSubjectInput').value = '';
+        this._clearGroups();
+        document.getElementById('advGroupSection').style.display = 'none';
+
+        // الكلية من instance أو fallback لـ window.subjectsData
+        let subs = [];
+        if (this.doctorCollege) {
+            // جيب كل مواد الكلية بغض النظر عن الفرقة
+            const allSubs = getAllSubjectsByCollege(this.doctorCollege);
+            // allSubs ممكن يكون object {1:[...], 2:[...]} أو array
+            if (Array.isArray(allSubs)) {
+                subs = allSubs;
+            } else {
+                const map = { '1': 'first_year', '2': 'second_year', '3': 'third_year', '4': 'fourth_year' };
+                subs = allSubs[map[level]] || allSubs[level] || [];
+            }
+        } else {
+            // fallback القديم
+            const map = { '1': 'first_year', '2': 'second_year', '3': 'third_year', '4': 'fourth_year' };
+            subs = (window.subjectsData || {})[map[level]] || (window.subjectsData || {})[level] || [];
+        }
+
+        subs.forEach(s => {
+            const o = document.createElement('option');
+            o.value = s;
+            dl.appendChild(o);
+        });
+    }
+
+    // ============================================
+    // بناء قائمة الجروبات حسب حرف الكلية
+    // ============================================
     _buildGroupDropdown(level) {
         const dropdown = document.getElementById('advGroupDropdown');
         dropdown.innerHTML = '';
 
-        const specialGroups = [`${level}G1 GP`, `${level}G1`];
+        // تحديد حرف الكلية
+        const collegeLetterMap = {
+            "NURS": "N", "PT": "P", "PHARM": "C",
+            "DENT": "D", "CS": "T", "BA": "B", "HS": "H"
+        };
+        const letter = collegeLetterMap[this.doctorCollege] || "N";
 
-        const regularGroups = [];
-        for (let i = 2; i <= 19; i++) {
-            regularGroups.push(`${level}G${i}`);
+        const allGroups = [];
+        // مجموعات خاصة
+        allGroups.push(`${level}${letter}1 GP`);
+        // مجموعات عادية 1 → 20
+        for (let i = 1; i <= 20; i++) {
+            allGroups.push(`${level}${letter}${i}`);
         }
-
-        const twentyGroups = [`${level}G20`, `${level}G30`, `${level}G40`];
-
-        const allGroups = [...specialGroups, ...regularGroups, ...twentyGroups];
 
         allGroups.forEach(g => {
             const div = document.createElement('div');
@@ -369,33 +403,48 @@ export class AdvancedArchiveManager {
 
     _clearGroups() {
         this.selectedGroups = new Set();
-        const c = document.getElementById('advGroupChipsContainer');
-        if (c) c.querySelectorAll('.adv-chip').forEach(x => x.remove());
+        const c  = document.getElementById('advGroupChipsContainer');
+        if (c)  c.querySelectorAll('.adv-chip').forEach(x => x.remove());
         const ph = document.getElementById('advGroupPlaceholder');
         if (ph) ph.style.display = 'inline';
         const dd = document.getElementById('advGroupDropdown');
         if (dd) { dd.innerHTML = ''; dd.classList.remove('open'); }
     }
 
-    open() {
-        if (this.isOpen) {
-            document.getElementById('advancedArchiveModal').style.display = 'flex';
-            return;
+    // ============================================
+    // open() — مع تأكيد جلب الكلية
+    // ============================================
+    async open() {
+        // لو الكلية لسه ما اتجبتش، حاول تجيبها
+        if (!this.doctorCollege) await this._loadDoctorCollege();
+
+        // اعرض شارة الكلية
+        const badgeBox = document.getElementById('collegeBadgeBox');
+        if (badgeBox && this.doctorCollege) {
+            badgeBox.innerHTML = `
+                <div class="college-badge">
+                    <i class="fa-solid fa-building-columns"></i>
+                    College: ${this.doctorCollege}
+                </div>`;
         }
+
         this.isOpen = true;
         document.getElementById('advancedArchiveModal').style.display = 'flex';
     }
 
+    // ============================================
+    // generateSmartReport — مع فلتر الكلية
+    // ============================================
     async generateSmartReport() {
         const db = window.db;
         if (!db) { alert("Error: Database not initialized."); return; }
 
         const startDateVal = document.getElementById('advStartDate').value;
-        const endDateVal = document.getElementById('advEndDate').value;
-        const level = document.getElementById('advLevelSelect').value;
-        const subject = document.getElementById('advSubjectInput').value.trim();
-        const statusLog = document.getElementById('advStatusLog');
-        const btn = document.getElementById('btnGenerateExcel');
+        const endDateVal   = document.getElementById('advEndDate').value;
+        const level        = document.getElementById('advLevelSelect').value;
+        const subject      = document.getElementById('advSubjectInput').value.trim();
+        const statusLog    = document.getElementById('advStatusLog');
+        const btn          = document.getElementById('btnGenerateExcel');
 
         if (!startDateVal || !endDateVal || !level || !subject) {
             statusLog.innerHTML = '<span style="color:#ef4444;">⚠️ Please fill in all fields.</span>';
@@ -403,7 +452,7 @@ export class AdvancedArchiveManager {
         }
 
         const start = new Date(startDateVal); start.setHours(0, 0, 0, 0);
-        const end = new Date(endDateVal); end.setHours(23, 59, 59, 999);
+        const end   = new Date(endDateVal);   end.setHours(23, 59, 59, 999);
 
         if (start > end) {
             statusLog.innerHTML = '<span style="color:#ef4444;">⚠️ Start date cannot be after end date.</span>';
@@ -411,6 +460,7 @@ export class AdvancedArchiveManager {
         }
 
         const filterGroups = this.selectedGroups.size > 0 ? new Set(this.selectedGroups) : null;
+        const college      = this.doctorCollege; // ← الكلية للفلتر
 
         const origBtn = btn.innerHTML;
         btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> <span>Processing...</span>';
@@ -418,24 +468,42 @@ export class AdvancedArchiveManager {
         btn.style.opacity = '0.8';
 
         try {
+            // ============================================
+            // 1. جيب سجلات الحضور (مفلترة بالمادة + الكلية)
+            // ============================================
             statusLog.innerText = "Fetching attendance records...";
 
-            const attSnap = await getDocs(
-                query(collection(db, "attendance"), where("subject", "==", subject))
-            );
+            // بناء الـ query مع فلتر الكلية
+            let attQuery;
+            if (college) {
+                attQuery = query(
+                    collection(db, "attendance"),
+                    where("subject",  "==", subject),
+                    where("college",  "==", college)
+                );
+            } else {
+                attQuery = query(
+                    collection(db, "attendance"),
+                    where("subject", "==", subject)
+                );
+            }
 
-            if (attSnap.empty) throw new Error("No records found for this subject.");
+            const attSnap = await getDocs(attQuery);
+            if (attSnap.empty) throw new Error("No records found for this subject in your college.");
 
-            let activeDatesSet = new Set();
+            let activeDatesSet   = new Set();
             let attendanceRecords = [];
-            let outsiderStudents = {};
+            let outsiderStudents  = {};
 
-            attSnap.forEach(doc => {
-                const r = doc.data();
-                const parts = r.date.split('/');
+            attSnap.forEach(docSnap => {
+                const r = docSnap.data();
+
+                // فلتر التاريخ
+                const parts   = r.date.split('/');
                 const recDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
                 if (recDate < start || recDate > end) return;
 
+                // فلتر الجروب (لو محدد)
                 if (filterGroups) {
                     const rg = (r.group || '').toUpperCase().trim();
                     if (!filterGroups.has(rg)) return;
@@ -443,8 +511,11 @@ export class AdvancedArchiveManager {
 
                 activeDatesSet.add(r.date);
                 attendanceRecords.push(r);
+
                 if (!outsiderStudents[r.id]) {
-                    outsiderStudents[r.id] = { id: r.id, name: r.name, group: r.group || '--' };
+                    outsiderStudents[r.id] = {
+                        id: r.id, name: r.name, group: r.group || '--'
+                    };
                 }
             });
 
@@ -457,32 +528,57 @@ export class AdvancedArchiveManager {
                 return;
             }
 
+            // ============================================
+            // 2. جيب الطلاب (مفلترين بالفرقة + الكلية)
+            // ============================================
             statusLog.innerText = "Fetching students...";
 
-            const stSnap = await getDocs(
-                query(collection(db, "students"), where("academic_level", "==", level))
-            );
+            let stQuery;
+            if (college) {
+                stQuery = query(
+                    collection(db, "students"),
+                    where("academic_level", "==", level),
+                    where("college",        "==", college)  // ← فلتر الكلية
+                );
+            } else {
+                stQuery = query(
+                    collection(db, "students"),
+                    where("academic_level", "==", level)
+                );
+            }
+
+            const stSnap = await getDocs(stQuery);
 
             let masterMap = {};
-            stSnap.forEach(doc => {
-                const s = doc.data();
+            stSnap.forEach(docSnap => {
+                const s  = docSnap.data();
                 const rg = (s.group || s.group_code || s.groupCode || '--').toUpperCase().trim();
+
+                // فلتر الجروب (لو محدد)
                 if (filterGroups && !filterGroups.has(rg)) return;
+
                 masterMap[s.id] = {
                     id: s.id, name: s.name, group: rg,
-                    status: 'Regular', logs: {}, doctorsSeen: new Set(), presenceCount: 0
+                    college: s.college || college,
+                    status: 'Regular', logs: {},
+                    doctorsSeen: new Set(), presenceCount: 0
                 };
             });
 
+            // أضف الطلاب اللي سجلوا حضور بس مش في قاعدة الطلاب
             for (const [id, d] of Object.entries(outsiderStudents)) {
                 if (!masterMap[id]) {
                     masterMap[id] = {
-                        id, name: d.name, group: d.group,
-                        status: 'Carry-Over', logs: {}, doctorsSeen: new Set(), presenceCount: 0
+                        id, name: d.name, group: d.group, college,
+                        status: 'Carry-Over', logs: {},
+                        doctorsSeen: new Set(), presenceCount: 0
                     };
                 }
             }
 
+            // ============================================
+            // 3. ربط الحضور بالطلاب
+            // ============================================
             statusLog.innerText = "Mapping data...";
 
             attendanceRecords.forEach(r => {
@@ -501,28 +597,32 @@ export class AdvancedArchiveManager {
                 return String(a.id).localeCompare(String(b.id));
             });
 
+            // ============================================
+            // 4. بناء ملف Excel
+            // ============================================
             statusLog.innerText = "Building Excel...";
+
             const total = sortedDates.length;
-            const rows = [];
+            const rows  = [];
 
             students.forEach((st, idx) => {
                 const present = st.presenceCount;
-                const absent = total - present;
-                const pct = total > 0 ? (present / total) * 100 : 0;
+                const absent  = total - present;
+                const pct     = total > 0 ? (present / total) * 100 : 0;
                 const doctors = Array.from(st.doctorsSeen).join(', ') || '--';
 
                 let rowRgb = 'FFFFFF';
-                if (pct < 50) rowRgb = 'FEE2E2';
+                if (pct < 50)      rowRgb = 'FEE2E2';
                 else if (pct < 75) rowRgb = 'FEF3C7';
-                else rowRgb = 'DCFCE7';
+                else               rowRgb = 'DCFCE7';
 
                 const base = {
                     fill: { fgColor: { rgb: rowRgb } },
                     border: {
-                        top: { style: 'thin', color: { rgb: 'CBD5E1' } },
+                        top:    { style: 'thin', color: { rgb: 'CBD5E1' } },
                         bottom: { style: 'thin', color: { rgb: 'CBD5E1' } },
-                        left: { style: 'thin', color: { rgb: 'CBD5E1' } },
-                        right: { style: 'thin', color: { rgb: 'CBD5E1' } }
+                        left:   { style: 'thin', color: { rgb: 'CBD5E1' } },
+                        right:  { style: 'thin', color: { rgb: 'CBD5E1' } }
                     },
                     alignment: { horizontal: 'center', vertical: 'center' },
                     font: { name: 'Arial', sz: 10 }
@@ -530,13 +630,14 @@ export class AdvancedArchiveManager {
                 const nameStyle = { ...base, alignment: { horizontal: 'right', vertical: 'center' } };
 
                 const row = {
-                    '#': { v: idx + 1, s: base },
-                    'Student ID': { v: st.id, s: base },
-                    'Student Name': { v: st.name, s: nameStyle },
-                    'Group': { v: st.group, s: base },
-                    'Attended': { v: present, s: base },
-                    'Absence': { v: absent, s: base },
-                    'Instructor': { v: doctors, s: base },
+                    '#':            { v: idx + 1,  s: base },
+                    'Student ID':   { v: st.id,    s: base },
+                    'Student Name': { v: st.name,  s: nameStyle },
+                    'Group':        { v: st.group, s: base },
+                    'College':      { v: st.college || college || '--', s: base },
+                    'Attended':     { v: present,  s: base },
+                    'Absence':      { v: absent,   s: base },
+                    'Instructor':   { v: doctors,  s: base },
                 };
 
                 sortedDates.forEach(d => {
@@ -556,8 +657,8 @@ export class AdvancedArchiveManager {
 
             const ws = XLSX.utils.json_to_sheet(rows);
             const cols = [
-                { wch: 5 }, { wch: 15 }, { wch: 30 }, { wch: 10 },
-                { wch: 10 }, { wch: 10 }, { wch: 25 }
+                { wch: 5 }, { wch: 15 }, { wch: 30 }, { wch: 12 },
+                { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 25 }
             ];
             sortedDates.forEach(() => cols.push({ wch: 12 }));
             ws['!cols'] = cols;
@@ -565,11 +666,22 @@ export class AdvancedArchiveManager {
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, 'Attendance Report');
 
-            const safeSubj = subject.replace(/[/\\?*\[\]]/g, '_').substring(0, 25);
-            const grpSuffix = filterGroups ? `_${Array.from(filterGroups).sort().join('-')}` : '_AllGroups';
-            XLSX.writeFile(wb, `Archive_${safeSubj}${grpSuffix}_${startDateVal}_to_${endDateVal}.xlsx`);
+            const safeSubj  = subject.replace(/[/\\?*\[\]]/g, '_').substring(0, 25);
+            const grpSuffix = filterGroups
+                ? `_${Array.from(filterGroups).sort().join('-')}`
+                : '_AllGroups';
+            const colSuffix = college ? `_${college}` : '';
 
-            statusLog.innerHTML = `<span style="color:#10b981;">✅ Done! ${students.length} students · ${sortedDates.length} sessions.</span>`;
+            XLSX.writeFile(wb,
+                `Archive_${safeSubj}${colSuffix}${grpSuffix}_${startDateVal}_to_${endDateVal}.xlsx`
+            );
+
+            statusLog.innerHTML = `
+                <span style="color:#10b981;">
+                    ✅ Done! ${students.length} students · ${sortedDates.length} sessions
+                    ${college ? `· College: ${college}` : ''}
+                </span>`;
+
             if (window.playSuccess) window.playSuccess();
 
         } catch (err) {
@@ -586,4 +698,4 @@ export class AdvancedArchiveManager {
 if (!window.advancedArchiveSystem) {
     window.advancedArchiveSystem = new AdvancedArchiveManager();
 }
-console.log('Advanced Archive v3 Loaded 🚀');
+console.log('Advanced Archive v4 Loaded 🚀');
