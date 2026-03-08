@@ -350,14 +350,16 @@ window.closeSessionImmediately = function () {
             partsSnap.forEach(docSnap => {
                 const p = docSnap.data();
 
-                if (p.status === "active" || p.status === "on_break") {
+                if (p.status === "active" || p.status === "on_break" || p.status === "expelled") {
+
 
                     const recID = `${p.id}_${fixedDateStr.replace(/\//g, '-')}_${cleanSubKey}`;
                     const attRef = doc(db, "attendance", recID);
 
                     let finalGroup = (p.group && p.group !== "General") ? p.group : targetGroups[0];
                     let notesText = "منضبط";
-                    if (p.isUnruly) notesText = "غير منضبط - مشاغب";
+                    if (p.status === "expelled") notesText = "تم الطرد من الجلسة";
+                    else if (p.isUnruly) notesText = "غير منضبط - مشاغب";
                     else if (p.isUniformViolation) notesText = "مخالفة زي";
 
                     currentBatch.set(attRef, {
@@ -1537,4 +1539,5 @@ document.addEventListener('input', function (e) {
             e.target.value = val;
         }
     }
+
 });
