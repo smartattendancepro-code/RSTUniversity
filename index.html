@@ -161,6 +161,12 @@
                         <i class="fa-solid fa-box-archive"></i>
                         <span>Attendance Archive</span>
                     </button>
+                    <button onclick="openSubjectEnrollmentSecurely()" style="width:100%; padding:14px; background:linear-gradient(135deg,#7c3aed,#6d28d9); 
+           color:#fff; border:none; border-radius:12px; font-size:14px; font-weight:800; 
+           cursor:pointer; display:flex; align-items:center; justify-content:center; gap:10px;">
+                        <i class="fa-solid fa-book-bookmark"></i> تسجيل المواد
+                    </button>
+
                 </div>
             </div>
         </div>
@@ -626,11 +632,11 @@
                                 <span data-i18n="attendance_report">سجل الحضور</span>
                             </button>
 
-                            <button id="btnToolsRequest" onclick="openToolsRequestModal()"
+                            <button id="btnTheoryAttendance" onclick="openTheoryAttendanceModal()"
                                 class="admin-sub-btn btn-tools"
-                                style="background: #ecfdf5; color: #047857; border-color: #a7f3d0; display: none;">
-                                <i class="fa-solid fa-briefcase-medical sub-btn-icon"></i>
-                                <span data-i18n="tools_request">طلب تجهيزات</span>
+                                style="background: #f0fdf4; color: #15803d; border-color: #bbf7d0; display: none;">
+                                <i class="fa-solid fa-clipboard-user sub-btn-icon"></i>
+                                <span data-i18n="theory_attendance">حضور نظري</span>
                             </button>
                             <button id="btnLiveFeedback" onclick="openFeedbackStats()"
                                 class="admin-sub-btn btn-feedback-static" style="display: none;">
@@ -3385,7 +3391,182 @@
 <script src="./group-aliases.js"></script>
 <script src="ramadan_theme.js"></script>
 <script src="group-search-module.js"></script>
+
+<div id="subjectEnrollmentModal" class="modal-overlay" style="z-index: 200000001; display:none;">
+    <div class="modal-box" style="padding:0; overflow:hidden;">
+        <div class="report-modal-header" style="padding:15px 20px;">
+            <div class="modal-title" style="margin:0; font-size:16px;">📚 تسجيل المواد</div>
+            <button onclick="document.getElementById('subjectEnrollmentModal').style.display='none'"
+                class="btn-close-stylish" style="width:auto; padding:5px 15px;">إغلاق</button>
+        </div>
+        <div id="collegeSelectorSection" style="display:none; padding:20px; text-align:center;">
+            <p style="color:#64748b; font-size:13px; margin-bottom:15px;">لم يتم تحديد كليتك بعد. اختر كليتك:</p>
+            <select id="collegeSelectInput" class="modern-select-input"
+                style="width:100%; margin-bottom:15px; padding:12px; border-radius:10px; border:1px solid #cbd5e1;">
+                <option value="" disabled selected>-- اختر الكلية --</option>
+                <option value="NURS">كلية التمريض</option>
+                <option value="PT">كلية العلاج الطبيعي</option>
+                <option value="DENT">كلية طب الأسنان</option>
+                <option value="CS">كلية علوم الحاسب</option>
+                <option value="PHARM">كلية الصيدلة</option>
+                <option value="HS">كلية العلوم الصحية</option>
+                <option value="BA">كلية إدارة الأعمال</option>
+            </select>
+            <button onclick="saveAndLoadCollege()" class="btn-main" style="width:100%;">حفظ والمتابعة</button>
+        </div>
+        <div id="enrollmentListContainer" style="padding:15px; max-height:70vh; overflow-y:auto;"></div>
+    </div>
+</div>
+
+<div id="enrolledStudentsViewModal" class="modal-overlay" style="z-index: 200000002; display:none;">
+    <div class="modal-box" style="padding:0; overflow:hidden;">
+        <div class="report-modal-header" style="padding:15px 20px;">
+            <div class="modal-title" id="enrolledModalTitle" style="margin:0; font-size:15px;">طلاب المادة</div>
+            <button onclick="document.getElementById('enrolledStudentsViewModal').style.display='none'"
+                class="btn-close-stylish" style="width:auto; padding:5px 15px;">إغلاق</button>
+        </div>
+        <div style="padding:10px 15px;">
+            <input type="text" placeholder="بحث بالاسم أو الكود..." oninput="filterEnrolledStudents(this.value)"
+                style="width:100%; padding:10px; border-radius:10px; border:1px solid #cbd5e1; margin-bottom:10px;">
+        </div>
+        <div id="enrolledStudentsList" style="padding:0 15px 15px; max-height:60vh; overflow-y:auto;"></div>
+    </div>
+</div>
 <script src="./screen-guard.js"></script>
+
+<div id="theoryAttendanceModal" class="modal-overlay" style="z-index: 2147483655; display: none;">
+    <div class="modal-box modern-theory-box">
+
+        <div class="theory-header">
+            <div class="header-main">
+                <i class="fa-solid fa-file-invoice theory-icon-top"></i>
+                <h3>Theory Attendance Report</h3>
+            </div>
+            <button onclick="document.getElementById('theoryAttendanceModal').style.display='none'"
+                class="theory-close-x">×</button>
+        </div>
+
+        <div class="theory-body">
+            <div class="theory-input-group">
+                <label><i class="fa-solid fa-book-open"></i> 1. Select Subject:</label>
+                <select id="theorySubjectSelect" class="v2-input-field">
+                </select>
+            </div>
+
+            <div class="theory-input-group">
+                <label><i class="fa-regular fa-calendar-check"></i> 2. Lecture Date:</label>
+                <input type="date" id="theoryDateInput" class="v2-input-field">
+            </div>
+
+            <div class="theory-info-card">
+                <div class="card-title">Excel Report Features:</div>
+                <ul class="features-list">
+                    <li>✅ Professional Corporate Styling</li>
+                    <li>✅ Total Absences Tracking</li>
+                    <li>✅ Behavior & Uniform Logging</li>
+                    <li>✅ Attendance Summary Row</li>
+                </ul>
+            </div>
+
+            <button onclick="generateTheoryReport()" class="btn-main theory-download-btn">
+                <span>Download Report</span>
+                <i class="fa-solid fa-file-excel"></i>
+            </button>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* التنسيق الإنجليزي الجديد */
+    .modern-theory-box {
+        max-width: 380px !important;
+        padding: 0 !important;
+        border-radius: 24px !important;
+        overflow: hidden;
+        background: #fff;
+        font-family: 'Outfit', sans-serif;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
+    }
+
+    .theory-header {
+        background: #1e3a5f;
+        padding: 25px 20px;
+        color: white;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .theory-icon-top {
+        font-size: 24px;
+        color: #38bdf8;
+    }
+
+    .theory-close-x {
+        background: rgba(255, 255, 255, 0.1);
+        border: none;
+        color: white;
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        cursor: pointer;
+    }
+
+    .theory-body {
+        padding: 25px;
+        text-align: left;
+    }
+
+    .theory-input-group {
+        margin-bottom: 15px;
+    }
+
+    .theory-input-group label {
+        display: block;
+        font-size: 13px;
+        font-weight: 700;
+        color: #475569;
+        margin-bottom: 6px;
+    }
+
+    .v2-input-field {
+        width: 100%;
+        padding: 12px;
+        border-radius: 10px;
+        border: 1.5px solid #cbd5e1;
+        font-size: 14px;
+        font-weight: 600;
+        outline: none;
+    }
+
+    .theory-info-card {
+        background: #f0f9ff;
+        border: 1px dashed #0ea5e9;
+        border-radius: 12px;
+        padding: 12px;
+        margin: 20px 0;
+    }
+
+    .features-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        font-size: 12px;
+        color: #0369a1;
+        font-weight: 600;
+    }
+
+    .theory-download-btn {
+        width: 100%;
+        background: linear-gradient(135deg, #1e40af, #1e3a5f) !important;
+        color: white !important;
+        border-radius: 12px !important;
+        height: 50px;
+        font-weight: 800 !important;
+    }
+</style>
+<script type="module" src="./subject-enrollment.js"></script>
+<script type="module" src="./theory-attendance.js"></script>
 
 
 

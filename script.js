@@ -1000,7 +1000,7 @@ document.addEventListener('click', (e) => {
 
         const sessionBtn = document.getElementById('btnToggleSession');
         const quickModeBtn = document.getElementById('btnQuickMode');
-        const toolsBtn = document.getElementById('btnToolsRequest');
+        const theoryBtn = document.getElementById('btnTheoryAttendance');
         const deanZone = document.getElementById('deanPrivateZone');
         const btnDataEntry = document.getElementById('btnDataEntry');
         const reportBtn = document.getElementById('btnViewReport');
@@ -4159,6 +4159,8 @@ document.addEventListener('click', (e) => {
         }
     };
 
+
+
     window.performFacultyLogin = async function () {
 
         const _t = (key, defaultText) => {
@@ -4475,99 +4477,75 @@ document.addEventListener('click', (e) => {
         const isStaff = isDean || isDoctor;
 
         document.body.classList.remove('is-dean', 'is-doctor', 'is-student');
+        if (isDean) document.body.classList.add('is-dean');
+        else if (isDoctor) document.body.classList.add('is-doctor');
+        else document.body.classList.add('is-student');
 
-        if (isDean) {
-            document.body.classList.add('is-dean');
-            console.log("🛡️ Current Identity: DEAN (Oversight Mode)");
-        } else if (isDoctor) {
-            document.body.classList.add('is-doctor');
-            console.log("👨‍🏫 Current Identity: DOCTOR (Control Mode)");
-        } else {
-            document.body.classList.add('is-student');
-            console.log("🎓 Current Identity: STUDENT/GUEST");
-        }
-
+        // --- التعريفات الأساسية (تأكد من وجودها جميعاً هنا) ---
         const sessionBtn = document.getElementById('btnToggleSession');
         const quickModeBtn = document.getElementById('btnQuickMode');
-        const toolsBtn = document.getElementById('btnToolsRequest');
-
+        const theoryBtn = document.getElementById('btnTheoryAttendance'); // هذا هو التعريف الصحيح
         const deanZone = document.getElementById('deanPrivateZone');
         const btnDataEntry = document.getElementById('btnDataEntry');
         const reportBtn = document.getElementById('btnViewReport');
-
-        const facultyProfileBtn = document.getElementById('facultyProfileBtn');
-        const studentProfileBtn = document.getElementById('studentProfileBtn');
         const mainActionBtn = document.getElementById('mainActionBtn');
         const makaniBar = document.getElementById('makaniSearchBar');
-
+        const studentProfileBtn = document.getElementById('studentProfileBtn');
+        const facultyProfileBtn = document.getElementById('facultyProfileBtn');
         const btnFeed = document.getElementById('btnLiveFeedback');
 
         if (isStaff) {
-            if (facultyProfileBtn) facultyProfileBtn.style.display = 'flex';
             if (btnDataEntry) btnDataEntry.style.display = 'flex';
             if (reportBtn) reportBtn.classList.remove('locked');
+            if (facultyProfileBtn) facultyProfileBtn.style.display = 'flex';
 
-            if (studentProfileBtn) studentProfileBtn.style.display = 'none';
             if (mainActionBtn) mainActionBtn.style.display = 'none';
             if (makaniBar) makaniBar.style.display = 'none';
+            if (studentProfileBtn) studentProfileBtn.style.display = 'none';
 
             if (isDoctor) {
                 console.log("✅ وضع الدكتور: إظهار أزرار التحكم");
-
                 if (sessionBtn) sessionBtn.style.setProperty('display', 'flex', 'important');
                 if (quickModeBtn) quickModeBtn.style.setProperty('display', 'flex', 'important');
-                if (toolsBtn) toolsBtn.style.setProperty('display', 'flex', 'important');
+
+                // تم استخدام theoryBtn بدلاً من toolsBtn المفقودة
+                if (theoryBtn) theoryBtn.style.setProperty('display', 'flex', 'important');
 
                 if (deanZone) deanZone.style.setProperty('display', 'none', 'important');
 
                 if (btnFeed) {
                     btnFeed.style.setProperty('display', 'flex', 'important');
-
                     if (typeof window.initFeedbackListener === 'function') {
                         window.initFeedbackListener();
                     }
                 }
-
             } else {
                 console.log("🛡️ وضع العميد: إخفاء أزرار التحكم");
-
                 if (sessionBtn) sessionBtn.style.setProperty('display', 'none', 'important');
                 if (quickModeBtn) quickModeBtn.style.setProperty('display', 'none', 'important');
-                if (toolsBtn) toolsBtn.style.setProperty('display', 'none', 'important');
-
+                if (theoryBtn) theoryBtn.style.setProperty('display', 'none', 'important');
                 if (deanZone) deanZone.style.setProperty('display', 'block', 'important');
-
                 if (btnFeed) btnFeed.style.setProperty('display', 'none', 'important');
             }
-        }
-        else {
+        } else {
             console.log("🎓 وضع الطالب: إخفاء أدوات الإدارة");
-
-            const adminElements = [
-                sessionBtn, quickModeBtn, toolsBtn, deanZone,
-                btnDataEntry, facultyProfileBtn,
-            ];
-
-            adminElements.forEach(el => {
-                if (el) el.style.setProperty('display', 'none', 'important');
-            });
-
+            if (btnDataEntry) btnDataEntry.style.display = 'none';
+            if (reportBtn) reportBtn.classList.add('locked');
+            if (deanZone) deanZone.style.display = 'none';
+            if (facultyProfileBtn) facultyProfileBtn.style.display = 'none';
+            if (sessionBtn) sessionBtn.style.display = 'none';
+            if (quickModeBtn) quickModeBtn.style.display = 'none';
+            if (theoryBtn) theoryBtn.style.display = 'none';
             if (btnFeed) btnFeed.style.setProperty('display', 'none', 'important');
-
-            if (window.feedbackUnsubscribe) {
-                window.feedbackUnsubscribe();
-                window.feedbackUnsubscribe = null;
-            }
 
             if (mainActionBtn) mainActionBtn.style.display = 'flex';
             if (makaniBar) makaniBar.style.display = 'block';
             if (studentProfileBtn) studentProfileBtn.style.display = 'flex';
-            if (reportBtn) reportBtn.classList.add('locked');
         }
 
-        const savedLang = localStorage.getItem('sys_lang') || 'ar';
-        if (typeof changeLanguage === 'function') {
-            changeLanguage(savedLang);
+        if (!isDoctor && window.feedbackUnsubscribe) {
+            window.feedbackUnsubscribe();
+            window.feedbackUnsubscribe = null;
         }
     };
 
@@ -7469,4 +7447,87 @@ window.downloadSimpleSheet = function (subjectName) {
 
 })();
 
+window.openSubjectEnrollmentSecurely = async function () {
+    const lang = localStorage.getItem('sys_lang') || 'ar';
+    
+    const adminToken = sessionStorage.getItem("secure_admin_session_token_v99");
+    const isDoctor = (adminToken === "ADMIN_ACTIVE" || adminToken === "SUPER_ADMIN_ACTIVE");
 
+    if (!isDoctor) {
+        const msg = (lang === 'ar') ? "🚫 منطقة محمية للدكاترة فقط." : "🚫 Faculty Only Area.";
+        if (typeof showToast === 'function') showToast(msg, 4000, "#ef4444");
+        return;
+    }
+
+    const modalId = 'customPassModal';
+    if (document.getElementById(modalId)) return;
+
+    const modalHTML = `
+        <div id="${modalId}" style="position:fixed; inset:0; background:rgba(15,23,42,0.7); backdrop-filter:blur(8px); z-index:999999; display:flex; align-items:center; justify-content:center; animation: fadeIn 0.3s ease;">
+            <div style="background:#fff; width:90%; max-width:340px; border-radius:24px; padding:30px; text-align:center; box-shadow:0 25px 50px -12px rgba(0,0,0,0.5); transform: scale(1); animation: scaleIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);">
+                <div style="width:60px; height:60px; background:#f5f3ff; color:#7c3aed; border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 auto 20px; border:2px solid #ddd6fe;">
+                    <i class="fa-solid fa-shield-halved" style="font-size:24px;"></i>
+                </div>
+                <h3 style="margin:0 0 10px; font-size:18px; font-weight:900; color:#1e293b;">${lang === 'ar' ? 'منطقة محميّة' : 'Protected Area'}</h3>
+                <p style="margin:0 0 20px; font-size:13px; color:#64748b;">${lang === 'ar' ? 'برجاء إدخال الكود السري للمتابعة' : 'Please enter secret code'}</p>
+                
+                <input type="password" id="secretPassInput" placeholder="••••••••" autofocus
+                       style="width:100%; padding:12px; border-radius:12px; border:2px solid #e2e8f0; text-align:center; font-size:18px; outline:none; transition:0.2s; margin-bottom:20px;">
+                
+                <div style="display:flex; gap:10px;">
+                    <button id="cancelPassBtn" style="flex:1; padding:12px; border-radius:12px; border:none; background:#f1f5f9; color:#64748b; font-weight:700; cursor:pointer;">${lang === 'ar' ? 'إلغاء' : 'Cancel'}</button>
+                    <button id="confirmPassBtn" style="flex:1; padding:12px; border-radius:12px; border:none; background:linear-gradient(135deg, #7c3aed, #6d28d9); color:#fff; font-weight:700; cursor:pointer;">${lang === 'ar' ? 'دخول' : 'Enter'}</button>
+                </div>
+            </div>
+        </div>
+        <style>
+            @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+            @keyframes scaleIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+            #secretPassInput:focus { border-color: #7c3aed; box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.1); }
+        </style>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+    const input = document.getElementById('secretPassInput');
+    input.focus();
+
+    const closeModal = () => document.getElementById(modalId).remove();
+
+    document.getElementById('cancelPassBtn').onclick = closeModal;
+
+    document.getElementById('confirmPassBtn').onclick = async function() {
+        const userCode = input.value.trim();
+        if (!userCode) return;
+
+        this.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i>';
+        this.style.pointerEvents = 'none';
+
+        try {
+            const secretRef = doc(db, "app_settings", "security");
+            const secretSnap = await getDoc(secretRef);
+
+            if (secretSnap.exists()) {
+                const correctCode = secretSnap.data().registration_code;
+
+                if (userCode === correctCode) {
+                    closeModal();
+                    if (typeof openSubjectEnrollmentModal === "function") openSubjectEnrollmentModal();
+                    else document.getElementById('subjectEnrollmentModal').style.display = 'flex';
+                } else {
+                    alert(lang === 'ar' ? 'الكود خطأ ❌' : 'Invalid Code ❌');
+                    this.innerHTML = lang === 'ar' ? 'دخول' : 'Enter';
+                    this.style.pointerEvents = 'auto';
+                    input.value = "";
+                    input.focus();
+                }
+            }
+        } catch (e) {
+            console.error(e);
+            closeModal();
+        }
+    };
+
+    input.addEventListener("keyup", (e) => {
+        if (e.key === "Enter") document.getElementById('confirmPassBtn').click();
+    });
+};
