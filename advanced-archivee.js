@@ -147,6 +147,20 @@ window.openAdvancedArchiveModal = async function () {
                     const s = d.data().subjectName;
                     if (s) subjects.push(s);
                 });
+                const facSnap = await getDoc(doc(db, "faculty_members", user.uid));
+                const college = facSnap.exists() ? (facSnap.data().college || "") : "";
+                if (college) {
+                    const qShared = query(
+                        collection(db, "subject_enrollments"),
+                        where("sharedWithAll", "==", true),
+                        where("college", "==", college)
+                    );
+                    const sharedSnap = await getDocs(qShared);
+                    sharedSnap.forEach(d => {
+                        const s = d.data().subjectName;
+                        if (s && !subjects.includes(s)) subjects.push(s); // بدون تكرار
+                    });
+                }
             }
         } catch (e) {
             console.warn("Could not fetch subjects:", e);
@@ -258,14 +272,25 @@ window.generateArchiveReport = async function () {
 
         let enrolledStudents = [];
         try {
-            const qe = query(
+            const qPersonal = query(
                 collection(db, "subject_enrollments"),
                 where("doctorUID", "==", user.uid),
                 where("subjectName", "==", subjectName)
             );
-            const es = await getDocs(qe);
-            if (!es.empty) {
-                enrolledStudents = es.docs[0].data().students || [];
+            const personalSnap = await getDocs(qPersonal);
+            if (!personalSnap.empty) {
+                enrolledStudents = personalSnap.docs[0].data().students || [];
+            } else {
+                const qShared = query(
+                    collection(db, "subject_enrollments"),
+                    where("sharedWithAll", "==", true),
+                    where("subjectName", "==", subjectName),
+                    where("college", "==", doctorCollege)
+                );
+                const sharedSnap = await getDocs(qShared);
+                if (!sharedSnap.empty) {
+                    enrolledStudents = sharedSnap.docs[0].data().students || [];
+                }
             }
         } catch (e) {
             console.warn("Enrollment fetch failed:", e);

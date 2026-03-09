@@ -5,6 +5,46 @@ import {
 const db = window.db;
 const auth = window.auth;
 
+const _theoryCache = {
+    uid: null,
+    subjects: null,
+    collegeCode: null,
+    doctorName: null,
+};
+
+window.clearTheoryAttendanceCache = function () {
+    _theoryCache.uid = null;
+    _theoryCache.subjects = null;
+    _theoryCache.collegeCode = null;
+    _theoryCache.doctorName = null;
+};
+
+async function _loadTheoryCache(user) {
+    if (_theoryCache.uid === user.uid && _theoryCache.subjects !== null) {
+        return; // كاش موجود، مش محتاج تحميل
+    }
+    const facSnap = await getDoc(doc(db, 'faculty_members', user.uid));
+    _theoryCache.collegeCode = 'NURS';
+    _theoryCache.doctorName = user.displayName || user.email || 'Unknown Lecturer';
+    if (facSnap.exists()) {
+        const fd = facSnap.data();
+        if (fd.college) _theoryCache.collegeCode = fd.college;
+        if (fd.name || fd.fullName) _theoryCache.doctorName = fd.name || fd.fullName;
+    }
+    const subjects = new Set();
+    const snap = await getDocs(
+        query(collection(db, 'subject_enrollments'), where('doctorUID', '==', user.uid))
+    );
+    snap.forEach(d => { if (d.data().subjectName) subjects.add(d.data().subjectName); });
+    const sharedSnap = await getDocs(
+        query(collection(db, 'subject_enrollments'),
+            where('sharedWithAll', '==', true),
+            where('college', '==', _theoryCache.collegeCode))
+    );
+    sharedSnap.forEach(d => { if (d.data().subjectName) subjects.add(d.data().subjectName); });
+    _theoryCache.uid = user.uid;
+    _theoryCache.subjects = subjects;
+}
 
 async function loadExcelJS() {
     if (window.ExcelJS) return window.ExcelJS;
@@ -69,20 +109,15 @@ window.openTheoryAttendanceModal = async function () {
     }
 
     try {
-        const snap = await getDocs(
-            query(collection(db, 'subject_enrollments'), where('doctorUID', '==', user.uid))
-        );
+        await _loadTheoryCache(user);
 
         select.innerHTML = '<option value="" disabled selected>-- Select Subject --</option>';
 
-        if (snap.empty) {
+        if (_theoryCache.subjects.size === 0) {
             select.innerHTML = '<option value="" disabled>No registered subjects (upload student files first)</option>';
             return;
         }
-
-        const subjects = new Set();
-        snap.forEach(d => { if (d.data().subjectName) subjects.add(d.data().subjectName); });
-        subjects.forEach(sub => {
+        _theoryCache.subjects.forEach(sub => {
             const opt = document.createElement('option');
             opt.value = opt.innerText = sub;
             select.appendChild(opt);
@@ -117,15 +152,9 @@ window.generateTheoryReport = async function () {
         const ExcelJS = await loadExcelJS();
         const user = auth.currentUser;
 
-        const facSnap = await getDoc(doc(db, 'faculty_members', user.uid));
-        let collegeCode = 'NURS';
-        let doctorName = user.displayName || user.email || 'Unknown Lecturer';
-
-        if (facSnap.exists()) {
-            const fd = facSnap.data();
-            if (fd.college) collegeCode = fd.college;
-            if (fd.name || fd.fullName) doctorName = fd.name || fd.fullName;
-        }
+        await _loadTheoryCache(user);
+        const collegeCode = _theoryCache.collegeCode;
+        const doctorName = _theoryCache.doctorName;
 
         const attCollection = `attendance_${collegeCode}`;
 
@@ -135,18 +164,33 @@ window.generateTheoryReport = async function () {
             where('subjectName', '==', subject)
         ));
 
-        if (enrollSnap.empty) {
-            if (typeof showToast === 'function')
-                showToast('❌ No enrolled student list found for this subject.', 4000, '#ef4444');
-            throw new Error('No enrollment found');
-        }
-
         let masterStudents = [];
-        enrollSnap.forEach(d => {
-            const data = d.data();
-            if (data.students && Array.isArray(data.students))
-                masterStudents = [...masterStudents, ...data.students];
-        });
+
+        if (!enrollSnap.empty) {
+            enrollSnap.forEach(d => {
+                const data = d.data();
+                if (data.students && Array.isArray(data.students))
+                    masterStudents = [...masterStudents, ...data.students];
+            });
+        } else {
+            // جرب الشيت المشترك من الادمن
+            const sharedEnrollSnap = await getDocs(query(
+                collection(db, 'subject_enrollments'),
+                where('sharedWithAll', '==', true),
+                where('subjectName', '==', subject),
+                where('college', '==', collegeCode)
+            ));
+            if (sharedEnrollSnap.empty) {
+                if (typeof showToast === 'function')
+                    showToast('❌ No enrolled student list found for this subject.', 4000, '#ef4444');
+                throw new Error('No enrollment found');
+            }
+            sharedEnrollSnap.forEach(d => {
+                const data = d.data();
+                if (data.students && Array.isArray(data.students))
+                    masterStudents = [...masterStudents, ...data.students];
+            });
+        }
 
         const todaySnap = await getDocs(query(
             collection(db, attCollection),

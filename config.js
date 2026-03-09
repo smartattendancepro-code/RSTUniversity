@@ -127,10 +127,10 @@ export const COLLEGE_SUBJECTS = {
     },
 
     "PT": {
-        "first_year": ["علاج طبيعي"],
-        "second_year": ["قلب"],
-        "third_year": ["كيمياء"],
-        "fourth_year": ["احياء"],
+        "first_year": ["علاج 1"],
+        "second_year": ["علاج 2"],
+        "third_year": ["علاج 3 د إيمان"],
+        "fourth_year": ["علاج 4 "],
         "fifth_year": []
     },
 

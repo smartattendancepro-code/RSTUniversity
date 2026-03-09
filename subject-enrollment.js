@@ -1,9 +1,7 @@
-
-
 import { COLLEGE_SUBJECTS, COLLEGE_NAMES } from './config.js';
 import {
     getFirestore, collection, doc,
-    getDoc, getDocs, addDoc, setDoc,
+    getDoc, getDocs, addDoc, setDoc, deleteDoc,
     query, where, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
@@ -128,6 +126,9 @@ async function _renderEnrollmentList(college, doctorUID, doctorName) {
         );
         const enrollSnap = await getDocs(q);
 
+        const isAdmin = await _isAdminDoctor(doctorUID);
+
+
         const enrolledMap = {};
         enrollSnap.forEach(d => {
             const data = d.data();
@@ -135,7 +136,53 @@ async function _renderEnrollmentList(college, doctorUID, doctorName) {
             if (subjectName) {
                 enrolledMap[subjectName] = {
                     docId: d.id,
-                    studentCount: data.studentCount || 0
+                    studentCount: data.studentCount || 0,
+                    isShared: false,
+                    ownerUID: data.doctorUID || doctorUID
+                };
+            }
+        });
+
+        if (isAdmin) {
+            // جلب الشيتات غير المشتركة (بتاعت الدكاترة) في نفس الكلية
+            const allEnrollQ = query(
+                collection(db, "subject_enrollments"),
+                where("sharedWithAll", "==", false),
+                where("college", "==", college)
+            );
+            const allEnrollSnap = await getDocs(allEnrollQ);
+            allEnrollSnap.forEach(d => {
+                const data = d.data();
+                const subjectName = data.subjectName || "";
+                if (subjectName && !enrolledMap[subjectName]) {
+                    enrolledMap[subjectName] = {
+                        docId: d.id,
+                        studentCount: data.studentCount || 0,
+                        isShared: false,
+                        ownerUID: data.doctorUID || ""
+                    };
+                }
+            });
+        }
+
+        const sharedQ = query(
+            collection(db, "subject_enrollments"),
+            where("sharedWithAll", "==", true),
+            where("college", "==", college)
+        );
+        const sharedSnap = await getDocs(sharedQ);
+        sharedSnap.forEach(d => {
+
+
+            const data = d.data();
+            const subjectName = data.subjectName || "";
+            // الشيت المشترك يظهر فقط لو مفيش شيت خاص للدكتور لنفس المادة
+            if (subjectName && !enrolledMap[subjectName]) {
+                enrolledMap[subjectName] = {
+                    docId: d.id,
+                    studentCount: data.studentCount || 0,
+                    isShared: true,
+                    ownerUID: data.doctorUID || ""
                 };
             }
         });
@@ -176,6 +223,8 @@ async function _renderEnrollmentList(college, doctorUID, doctorName) {
             const isEnrolled = !!enrolled;
             const studentCount = isEnrolled ? enrolled.studentCount : 0;
             const docId = isEnrolled ? enrolled.docId : null;
+            const isSharedEntry = isEnrolled ? (enrolled.isShared || false) : false;
+            const entryOwnerUID = isEnrolled ? (enrolled.ownerUID || doctorUID) : doctorUID;
 
             if (yearKey !== lastYear) {
                 lastYear = yearKey;
@@ -235,6 +284,16 @@ async function _renderEnrollmentList(college, doctorUID, doctorName) {
                                     ">
                                         <i class="fa-solid fa-users"></i> ${studentCount} طالب
                                     </span>
+                                    ${isSharedEntry ? `
+                                        <span style="
+                                            background:#fef9c3; color:#ca8a04;
+                                            padding:3px 10px; border-radius:20px;
+                                            font-size:11px; font-weight:800;
+                                            border:1px solid #fde68a;
+                                        ">
+                                            <i class="fa-solid fa-share-nodes"></i> مشترك من الادمن
+                                        </span>
+                                    ` : ''}
                                 </div>
                             ` : `
                                 <span style="
@@ -251,7 +310,7 @@ async function _renderEnrollmentList(college, doctorUID, doctorName) {
                         <!-- أزرار -->
                         <div style="display:flex; flex-direction:column; gap:6px; align-items:flex-end;">
                             
-                            <!-- زر رفع القائمة -->
+                            <!-- زر رفع القائمة العادي -->
                             <label style="
                                 background: ${isEnrolled ? 'linear-gradient(135deg,#f59e0b,#d97706)' : 'linear-gradient(135deg,#7c3aed,#6d28d9)'};
                                 color:#fff; padding:7px 12px;
@@ -270,6 +329,26 @@ async function _renderEnrollmentList(college, doctorUID, doctorName) {
                                 >
                             </label>
 
+                            <!-- زر رفع الشيت المشترك — للادمن فقط -->
+                            ${isAdmin ? `
+                                <label style="
+                                    background: linear-gradient(135deg,#0ea5e9,#0284c7);
+                                    color:#fff; padding:7px 12px;
+                                    border-radius:10px; font-size:11px; font-weight:800;
+                                    cursor:pointer; display:flex; align-items:center; gap:6px;
+                                    box-shadow: 0 2px 8px rgba(2,132,199,0.3);
+                                    white-space:nowrap;
+                                ">
+                                    <i class="fa-solid fa-globe"></i> رفع مشترك
+                                    <input 
+                                        type="file" 
+                                        accept=".xlsx,.xls" 
+                                        style="display:none;" 
+                                        onchange="handleAdminSharedExcelUpload(this, '${subjectSafe}')"
+                                    >
+                                </label>
+                            ` : ''}
+
                             <!-- زر العرض (فقط لو مسجلة) -->
                             ${isEnrolled ? `
                                 <button 
@@ -285,6 +364,23 @@ async function _renderEnrollmentList(college, doctorUID, doctorName) {
                                     <i class="fa-solid fa-eye"></i> عرض
                                 </button>
                             ` : ''}
+
+                            <!-- زر الحذف — للادمن فقط وعلى أي شيت مسجل -->
+                            ${isAdmin && isEnrolled ? `
+                                <button 
+                                    onclick="adminDeleteEnrollment('${docId}', '${subjectSafe}', '${entryOwnerUID}')"
+                                    style="
+                                        background:#fee2e2; color:#dc2626;
+                                        border:1px solid #fecaca; padding:7px 12px;
+                                        border-radius:10px; font-size:11px; font-weight:800;
+                                        cursor:pointer; display:flex; align-items:center; gap:6px;
+                                        white-space:nowrap;
+                                    "
+                                >
+                                    <i class="fa-solid fa-trash"></i> حذف
+                                </button>
+                            ` : ''}
+
                         </div>
                     </div>
                 </div>`;
@@ -327,7 +423,7 @@ window.handleSubjectExcelUpload = async function (input, subjectName) {
         const rows = data.slice(1);
 
         const students = rows
-            .filter(row => row[0] && row[1]) // لازم يكون فيه ID واسم
+            .filter(row => row[0] && row[1])
             .map(row => ({
                 id: String(row[0]).trim(),
                 name: String(row[1]).trim(),
@@ -342,13 +438,11 @@ window.handleSubjectExcelUpload = async function (input, subjectName) {
 
         if (typeof showToast === 'function') showToast(`⬆️ جاري رفع ${students.length} طالب...`, 2000, "#7c3aed");
 
-        // جلب بيانات الدكتور
         const facSnap = await getDoc(doc(db, "faculty_members", user.uid));
         const facData = facSnap.exists() ? facSnap.data() : {};
         const doctorName = facData.fullName || "";
         const college = facData.college || "";
 
-        // البحث عن تسجيل موجود
         const q = query(
             collection(db, "subject_enrollments"),
             where("doctorUID", "==", user.uid),
@@ -376,6 +470,7 @@ window.handleSubjectExcelUpload = async function (input, subjectName) {
 
         if (typeof showToast === 'function') showToast(`✅ تم رفع ${students.length} طالب بنجاح`, 3000, "#10b981");
         if (typeof playSuccess === 'function') playSuccess();
+        if (typeof clearTheoryAttendanceCache === 'function') clearTheoryAttendanceCache();
 
         await _renderEnrollmentList(college, user.uid, doctorName);
 
@@ -429,7 +524,6 @@ window.viewEnrolledStudents = async function (subjectName, docId) {
 };
 
 window.filterEnrolledStudents = function (searchText) {
-
     if (!window._enrolledStudentsCache) return;
 
     const filtered = window._enrolledStudentsCache.filter(s => {
@@ -542,5 +636,137 @@ function _readExcelFile(file) {
         reader.readAsArrayBuffer(file);
     });
 }
+
+
+
+async function _isAdminDoctor(uid) {
+    try {
+        const snap = await getDoc(doc(db, "faculty_members", uid));
+        return snap.exists() && snap.data().isAdminDoctor === true;
+    } catch (e) {
+        return false;
+    }
+}
+
+/**
+ * يحذف أي تسجيل (خاص أو مشترك) — للادمن فقط
+ * @param {string} docId       - ID مستند subject_enrollments
+ * @param {string} subjectName - اسم المادة
+ * @param {string} ownerUID    - صاحب الشيت (للتحقق فقط)
+ */
+window.adminDeleteEnrollment = async function (docId, subjectName, ownerUID) {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const isAdmin = await _isAdminDoctor(user.uid);
+    if (!isAdmin) {
+        if (typeof showToast === 'function') showToast("❌ ليس لديك صلاحية الحذف", 3000, "#ef4444");
+        return;
+    }
+
+    const confirmed = confirm(`هل أنت متأكد من حذف تسجيل مادة "${subjectName}" ؟\nلا يمكن التراجع عن هذا الإجراء.`);
+    if (!confirmed) return;
+
+    try {
+        await deleteDoc(doc(db, "subject_enrollments", docId));
+        if (typeof showToast === 'function') showToast("🗑️ تم الحذف بنجاح", 2500, "#10b981");
+
+        const facSnap = await getDoc(doc(db, "faculty_members", user.uid));
+        const facData = facSnap.exists() ? facSnap.data() : {};
+        await _renderEnrollmentList(facData.college || "", user.uid, facData.fullName || "");
+    } catch (e) {
+        console.error("adminDeleteEnrollment Error:", e);
+        if (typeof showToast === 'function') showToast("❌ خطأ أثناء الحذف", 3000, "#ef4444");
+    }
+};
+
+
+window.handleAdminSharedExcelUpload = async function (input, subjectName) {
+    const file = input.files[0];
+    if (!file) return;
+
+    const user = auth.currentUser;
+    if (!user) {
+        if (typeof showToast === 'function') showToast("⚠️ يجب تسجيل الدخول أولاً", 3000, "#f59e0b");
+        return;
+    }
+
+    const isAdmin = await _isAdminDoctor(user.uid);
+    if (!isAdmin) {
+        if (typeof showToast === 'function') showToast("❌ هذه الميزة للدكاترة الادمن فقط", 3000, "#ef4444");
+        input.value = '';
+        return;
+    }
+
+    if (typeof showToast === 'function') showToast("⏳ جاري قراءة الملف...", 2000, "#7c3aed");
+
+    try {
+        const data = await _readExcelFile(file);
+
+        if (!data || data.length === 0) {
+            if (typeof showToast === 'function') showToast("❌ الملف فارغ أو غير صالح", 3000, "#ef4444");
+            input.value = '';
+            return;
+        }
+
+        const rows = data.slice(1);
+        const students = rows
+            .filter(row => row[0] && row[1])
+            .map(row => ({
+                id: String(row[0]).trim(),
+                name: String(row[1]).trim(),
+                group: row[2] ? String(row[2]).trim() : ""
+            }));
+
+        if (students.length === 0) {
+            if (typeof showToast === 'function') showToast("❌ لا توجد بيانات صالحة في الملف", 3000, "#ef4444");
+            input.value = '';
+            return;
+        }
+
+        if (typeof showToast === 'function') showToast(`⬆️ جاري رفع ${students.length} طالب (مشترك)...`, 2000, "#7c3aed");
+
+        const facSnap = await getDoc(doc(db, "faculty_members", user.uid));
+        const facData = facSnap.exists() ? facSnap.data() : {};
+        const college = facData.college || "";
+
+        const q = query(
+            collection(db, "subject_enrollments"),
+            where("sharedWithAll", "==", true),
+            where("subjectName", "==", subjectName),
+            where("college", "==", college)
+        );
+        const existingSnap = await getDocs(q);
+
+        const payload = {
+            doctorUID: user.uid,
+            doctorName: facData.fullName || "",
+            college: college,
+            subjectName: subjectName,
+            students: students,
+            studentCount: students.length,
+            sharedWithAll: true,
+            updatedAt: serverTimestamp()
+        };
+
+        if (!existingSnap.empty) {
+            await setDoc(doc(db, "subject_enrollments", existingSnap.docs[0].id), payload, { merge: true });
+        } else {
+            payload.createdAt = serverTimestamp();
+            await addDoc(collection(db, "subject_enrollments"), payload);
+        }
+
+        if (typeof showToast === 'function') showToast(`✅ تم رفع الشيت المشترك (${students.length} طالب)`, 3000, "#10b981");
+        if (typeof playSuccess === 'function') playSuccess();
+
+        await _renderEnrollmentList(college, user.uid, facData.fullName || "");
+
+    } catch (e) {
+        console.error("handleAdminSharedExcelUpload Error:", e);
+        if (typeof showToast === 'function') showToast("❌ خطأ أثناء رفع الشيت المشترك", 3000, "#ef4444");
+    } finally {
+        input.value = '';
+    }
+};
 
 console.log("✅ Subject Enrollment System Loaded");
