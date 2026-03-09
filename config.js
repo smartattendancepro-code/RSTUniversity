@@ -178,7 +178,7 @@ export const COLLEGE_SUBJECTS = {
     // 💼 كلية إدارة الأعمال
     // ----------------------------------------
     "BA": {
-        "first_year": [كيمياء],
+        "first_year": ["كيمياء"],
         "second_year": [],
         "third_year": [],
         "fourth_year": [],
@@ -248,3 +248,4 @@ export function getAllSubjectsByCollege(collegeCode) {
     return Object.values(collegeData).flat();
 
 }
+
