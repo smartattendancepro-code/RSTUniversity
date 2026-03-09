@@ -258,26 +258,14 @@ window.generateArchiveReport = async function () {
 
         let enrolledStudents = [];
         try {
-            const sessionSnap = await getDoc(doc(db, "active_sessions", user.uid));
-            if (sessionSnap.exists() && sessionSnap.data().enrollmentDocId) {
-                const enrollSnap = await getDoc(
-                    doc(db, "subject_enrollments", sessionSnap.data().enrollmentDocId)
-                );
-                if (enrollSnap.exists()) {
-                    enrolledStudents = enrollSnap.data().students || [];
-                }
-            }
-
-            if (enrolledStudents.length === 0) {
-                const qe = query(
-                    collection(db, "subject_enrollments"),
-                    where("doctorUID", "==", user.uid),
-                    where("subjectName", "==", subjectName)
-                );
-                const es = await getDocs(qe);
-                if (!es.empty) {
-                    enrolledStudents = es.docs[0].data().students || [];
-                }
+            const qe = query(
+                collection(db, "subject_enrollments"),
+                where("doctorUID", "==", user.uid),
+                where("subjectName", "==", subjectName)
+            );
+            const es = await getDocs(qe);
+            if (!es.empty) {
+                enrolledStudents = es.docs[0].data().students || [];
             }
         } catch (e) {
             console.warn("Enrollment fetch failed:", e);
@@ -433,7 +421,7 @@ window.generateArchiveReport = async function () {
                 alignment: { horizontal: "center" }
             },
             even: { fill: { fgColor: { rgb: "F8FAFC" } }, alignment: { horizontal: "center" } },
-            odd:  { fill: { fgColor: { rgb: "FFFFFF" } }, alignment: { horizontal: "center" } }
+            odd: { fill: { fgColor: { rgb: "FFFFFF" } }, alignment: { horizontal: "center" } }
         };
 
         const range = XLSX.utils.decode_range(ws['!ref']);
@@ -450,9 +438,9 @@ window.generateArchiveReport = async function () {
                 } else if (R === 2) {
                     ws[ref].s = S.header;
                 } else if (R >= 3) {
-                    if (val === "✓")             ws[ref].s = S.present;
-                    else if (val === "✗")        ws[ref].s = S.absent;
-                    else if (C === statsCol)     ws[ref].s = S.good;
+                    if (val === "✓") ws[ref].s = S.present;
+                    else if (val === "✗") ws[ref].s = S.absent;
+                    else if (C === statsCol) ws[ref].s = S.good;
                     else if (C === statsCol + 1) ws[ref].s = S.bad;
                     else if (C === statsCol + 2) {
                         const pct = parseInt(val);
