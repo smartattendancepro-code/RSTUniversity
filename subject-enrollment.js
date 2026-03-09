@@ -1,6 +1,4 @@
-// ========================================================
-// 📚 Subject Enrollment System - subject-enrollment.js
-// ========================================================
+
 
 import { COLLEGE_SUBJECTS, COLLEGE_NAMES } from './config.js';
 import {
@@ -12,9 +10,7 @@ import {
 const db = window.db;
 const auth = window.auth;
 
-// ========================================================
-// 🔓 فتح مودال تسجيل المواد
-// ========================================================
+
 window.openSubjectEnrollmentModal = async function () {
     const modal = document.getElementById('subjectEnrollmentModal');
     if (!modal) return;
@@ -27,7 +23,6 @@ window.openSubjectEnrollmentModal = async function () {
         return;
     }
 
-    // إظهار شاشة التحميل
     const collegeSelectorSection = document.getElementById('collegeSelectorSection');
     const enrollmentListContainer = document.getElementById('enrollmentListContainer');
 
@@ -52,11 +47,9 @@ window.openSubjectEnrollmentModal = async function () {
         const college = facData.college;
 
         if (!college) {
-            // لا توجد كلية محددة → أظهر selector
             if (collegeSelectorSection) collegeSelectorSection.style.display = 'block';
             if (enrollmentListContainer) enrollmentListContainer.innerHTML = '';
         } else {
-            // توجد كلية → اعرض قائمة المواد مباشرة
             if (collegeSelectorSection) collegeSelectorSection.style.display = 'none';
             await _renderEnrollmentList(college, user.uid, facData.fullName || "");
         }
@@ -71,9 +64,7 @@ window.openSubjectEnrollmentModal = async function () {
     }
 };
 
-// ========================================================
-// 💾 حفظ الكلية والمتابعة
-// ========================================================
+
 window.saveAndLoadCollege = async function () {
     const select = document.getElementById('enrollmentCollegeSelect');
     if (!select || !select.value) {
@@ -93,14 +84,11 @@ window.saveAndLoadCollege = async function () {
     }
 
     try {
-        // حفظ الكلية في faculty_members
         await setDoc(doc(db, "faculty_members", user.uid), { college: college }, { merge: true });
 
-        // إخفاء selector وعرض القائمة
         const collegeSelectorSection = document.getElementById('collegeSelectorSection');
         if (collegeSelectorSection) collegeSelectorSection.style.display = 'none';
 
-        // جلب اسم الدكتور
         const facSnap = await getDoc(doc(db, "faculty_members", user.uid));
         const doctorName = facSnap.exists() ? (facSnap.data().fullName || "") : "";
 
@@ -119,14 +107,10 @@ window.saveAndLoadCollege = async function () {
     }
 };
 
-// ========================================================
-// 🎨 رسم قائمة المواد
-// ========================================================
 async function _renderEnrollmentList(college, doctorUID, doctorName) {
     const container = document.getElementById('enrollmentListContainer');
     if (!container) return;
 
-    // عنوان الكلية
     const collegeName = COLLEGE_NAMES[college] || college;
     const headerEl = document.getElementById('enrollmentCollegeTitle');
     if (headerEl) headerEl.innerText = collegeName;
@@ -138,14 +122,12 @@ async function _renderEnrollmentList(college, doctorUID, doctorName) {
         </div>`;
 
     try {
-        // جلب التسجيلات الموجودة لهذا الدكتور
         const q = query(
             collection(db, "subject_enrollments"),
             where("doctorUID", "==", doctorUID)
         );
         const enrollSnap = await getDocs(q);
 
-        // بناء خريطة: اسم المادة → { docId, studentCount }
         const enrolledMap = {};
         enrollSnap.forEach(d => {
             const data = d.data();
@@ -158,10 +140,8 @@ async function _renderEnrollmentList(college, doctorUID, doctorName) {
             }
         });
 
-        // جلب كل مواد الكلية
         const collegeSubjectsData = COLLEGE_SUBJECTS[college] || {};
 
-        // تجميع المواد مع أسماء الفرق
         const YEAR_LABELS = {
             "first_year": "الفرقة الأولى",
             "second_year": "الفرقة الثانية",
@@ -187,7 +167,6 @@ async function _renderEnrollmentList(college, doctorUID, doctorName) {
             return;
         }
 
-        // بناء الـ HTML
         let html = '';
         let lastYear = '';
 
@@ -198,7 +177,6 @@ async function _renderEnrollmentList(college, doctorUID, doctorName) {
             const studentCount = isEnrolled ? enrolled.studentCount : 0;
             const docId = isEnrolled ? enrolled.docId : null;
 
-            // فاصل الفرقة
             if (yearKey !== lastYear) {
                 lastYear = yearKey;
                 html += `
@@ -220,7 +198,6 @@ async function _renderEnrollmentList(college, doctorUID, doctorName) {
                     </div>`;
             }
 
-            // كارت المادة
             const subjectSafe = subjectName.replace(/'/g, "\\'");
 
             html += `
@@ -325,9 +302,7 @@ async function _renderEnrollmentList(college, doctorUID, doctorName) {
     }
 }
 
-// ========================================================
-// 📤 رفع قائمة الطلاب من Excel
-// ========================================================
+
 window.handleSubjectExcelUpload = async function (input, subjectName) {
     const file = input.files[0];
     if (!file) return;
@@ -341,7 +316,6 @@ window.handleSubjectExcelUpload = async function (input, subjectName) {
     if (typeof showToast === 'function') showToast("⏳ جاري قراءة الملف...", 2000, "#7c3aed");
 
     try {
-        // قراءة الـ Excel
         const data = await _readExcelFile(file);
 
         if (!data || data.length === 0) {
@@ -350,7 +324,6 @@ window.handleSubjectExcelUpload = async function (input, subjectName) {
             return;
         }
 
-        // تجاهل الصف الأول (header)
         const rows = data.slice(1);
 
         const students = rows
@@ -549,9 +522,7 @@ function _renderEnrolledList(students) {
     listEl.innerHTML = html;
 }
 
-// ========================================================
-// 📖 قراءة ملف Excel
-// ========================================================
+
 function _readExcelFile(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();

@@ -406,7 +406,6 @@ window.closeSessionImmediately = function () {
                     });
                     opCounter++;
 
-                    // >>> أضف الكود الجديد هنا (تحت الحفظ الأول مباشرة) <<<
                     const globalRef = doc(db, "attendance", recID);
                     currentBatch.set(globalRef, {
                         id: p.id,

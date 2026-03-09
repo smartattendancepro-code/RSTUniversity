@@ -1,16 +1,8 @@
-// ============================================================
-//  نظام كشف الاشتباه في التسجيل بالنيابة
-//  يضاف في: script.js أو admin-session.js
-// ============================================================
 
-// ── 1. عند تسجيل حضور طالب، احفظ بصمته وIP في Firebase ──────
-// في الدالة اللي بتسجل الحضور (مثلاً confirmAttendance أو submitAttendance)
-// أضف الكود ده قبل أو بعد ما تكتب بيانات الحضور:
 
 async function saveStudentFingerprint(sessionId, studentData) {
-    const studentIp = await getStudentIP();           // دالة موجودة بالفعل
+    const studentIp = await getStudentIP();          
     const deviceId = localStorage.getItem('nursing_secure_device_v4') || window.HARDWARE_ID || "UNKNOWN";
-    // الـ fingerprint الموجود بالفعل
 
     const fingerprintRef = doc(db, `active_sessions/${sessionId}/fingerprints/${studentData.code}`);
 
@@ -21,14 +13,12 @@ async function saveStudentFingerprint(sessionId, studentData) {
         timestamp: Date.now()
     });
 
-    // ── بعد ما تحفظ، افحص هل في اشتباه ──
     await checkForFraud(sessionId, studentData, studentIp, deviceId);
 }
 
 
 async function checkForFraud(sessionId, newStudent, newIp, newDeviceId) {
 
-    // ✅ المسار الصح هو participants مش fingerprints
     const participantsRef = collection(db, `active_sessions/${sessionId}/participants`);
     const allSnap = await getDocs(participantsRef);
 
@@ -37,10 +27,8 @@ async function checkForFraud(sessionId, newStudent, newIp, newDeviceId) {
     for (const docSnap of allSnap.docs) {
         const data = docSnap.data();
 
-        // تجاهل نفس الطالب
         if (data.uid === newStudent.uid) continue;
 
-        // ✅ البيانات جوه trap_report
         const trapReport = data.trap_report;
         if (!trapReport) continue;
 
@@ -54,9 +42,9 @@ async function checkForFraud(sessionId, newStudent, newIp, newDeviceId) {
             await setDoc(
                 doc(db, `active_sessions/${sessionId}/fraud_alerts/${newStudent.code}`),
                 {
-                    suspectName: newStudent.name,   // ← المسجَّل بجهاز غيره
+                    suspectName: newStudent.name,   
                     suspectCode: newStudent.code,
-                    originalName: data.name,         // ← صاحب الجهاز
+                    originalName: data.name,         
                     originalCode: data.uid,
                     sharedIp: newIp,
                     sharedDevice: newDeviceId,
@@ -72,9 +60,7 @@ async function checkForFraud(sessionId, newStudent, newIp, newDeviceId) {
 }
 
 
-// ── 3. واجهة التنبيه للدكتور ─────────────────────────────────
 window.showFraudAlert = function (data) {
-    // أزل أي تنبيه قديم
     const old = document.getElementById('fraudAlertToast');
     if (old) old.remove();
 
@@ -321,7 +307,6 @@ window.showFraudAlert = function (data) {
 
     document.body.appendChild(toast);
 
-    // صوت تنبيه (اختياري)
     try {
         const ctx = new AudioContext();
         const osc = ctx.createOscillator();
@@ -335,7 +320,6 @@ window.showFraudAlert = function (data) {
         osc.stop(ctx.currentTime + 0.4);
     } catch (e) { }
 
-    // اختفاء تلقائي بعد 15 ثانية
     setTimeout(dismissFraudAlert, 15000);
 }
 
@@ -347,9 +331,7 @@ function dismissFraudAlert() {
 }
 
 
-// ── 4. دالة الإزالة (اربطها بدالة الإزالة الموجودة عندك) ────
 function removeStudentFromSession(studentCode, sessionId) {
-    // غيّر المسار ده حسب مسار Firebase بتاعك
     firebase.database()
         .ref(`sessions/${sessionId}/attendance/${studentCode}`)
         .remove()

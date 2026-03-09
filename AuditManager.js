@@ -9,13 +9,11 @@ export const AuditManager = {
         try {
             const now = new Date();
 
-            // ============================
-            // 1️⃣  تحديد التواريخ والمعرفات
-            // ============================
+          
             const dateKey = now.toLocaleDateString('en-GB')
                 .split('/')
                 .reverse()
-                .join('-');   // YYYY-MM-DD
+                .join('-');   
 
             const timeStr = now.toLocaleTimeString('en-US', {
                 hour: '2-digit',
@@ -29,9 +27,7 @@ export const AuditManager = {
             const subjectName = sessionData.allowedSubject || "Unknown Subject";
             const hallName = sessionData.hall || "Unknown Hall";
 
-            // ============================
-            // 2️⃣  بيانات الطالب من الكاش
-            // ============================
+        
             let cachedProfile = {};
             try {
                 cachedProfile = JSON.parse(localStorage.getItem('cached_profile_data') || '{}');
@@ -41,9 +37,6 @@ export const AuditManager = {
             const studentID = cachedProfile.studentID || "---";
             const studentGroup = cachedProfile.group || cachedProfile.level || "غير محدد";
 
-            // ============================
-            // 3️⃣  بيانات الأمان والبصمة
-            // ============================
             const deviceInfo = {
                 fingerprint: techData.deviceFingerprint || "no_fingerprint",
                 isDeviceMatch: techData.isDeviceMatch ?? true,
@@ -66,10 +59,6 @@ export const AuditManager = {
                 cheat_reason: techData.gpsData?.cheat_reason || ""
             };
 
-            // ============================
-            // 4️⃣  المسارات في Firestore
-            // ============================
-            //  audit_logs → {date} → sessions → {doctorUID} → students → {studentUID}
 
             const sessionInfoRef = doc(
                 db,
@@ -84,9 +73,6 @@ export const AuditManager = {
                 "students", user.uid
             );
 
-            // ============================
-            // 5️⃣  كتابة بيانات الجلسة (مرة واحدة، merge)
-            // ============================
             await setDoc(sessionInfoRef, {
                 doctorUID: doctorUID,
                 doctorName: doctorName,
@@ -98,36 +84,28 @@ export const AuditManager = {
                 last_updated: serverTimestamp()
             }, { merge: true });
 
-            // ============================
-            // 6️⃣  كتابة سجل الطالب الكامل
-            // ============================
+        
             await setDoc(studentLogRef, {
 
-                // --- هوية الطالب ---
                 studentUID: user.uid,
                 studentName: studentName,
                 studentID: studentID,
                 studentEmail: user.email || "---",
                 group: studentGroup,
 
-                // --- بيانات الدخول ---
                 entry_time: timeStr,
                 entry_date: dateKey,
                 timestamp: serverTimestamp(),
 
-                // --- بيانات الجلسة ---
                 doctorUID: doctorUID,
                 doctorName: doctorName,
                 subject: subjectName,
                 hall: hallName,
 
-                // --- البصمة والأمان ---
                 device: deviceInfo,
 
-                // --- الموقع الجغرافي ---
                 gps: gpsInfo,
 
-                // --- نتيجة الفحص الأمني ---
                 security_result: {
                     device_trusted: techData.isDeviceMatch ?? true,
                     gps_in_range: gpsInfo.in_range,
@@ -136,12 +114,11 @@ export const AuditManager = {
                         ? "CLEAN" : "FLAGGED"
                 }
 
-            }, { merge: true });  // merge عشان لو دخل أكتر من مرة يتحدث مش يتكرر
+            }, { merge: true });  
 
             console.log(`✅ Audit V4: Logged [${studentName}] → [${dateKey}] → [${doctorName}] → [${subjectName}]`);
 
         } catch (error) {
-            // فشل الأرشفة لا يعطل دخول الطالب
             console.error("⚠️ [Critical Audit Error]:", error);
         }
     }

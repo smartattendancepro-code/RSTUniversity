@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport"
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title data-i18n="app_title">نظام كشف الحضور - كلية العلاج الطبيعي</title>
+    <title data-i18n="app_title">نظام كشف الحضور - جامعة الريادة  </title>
     <meta name="apple-mobile-web-app-title" content="SAP">
 
     <meta name="mobile-web-app-capable" content="yes">
@@ -3458,26 +3458,21 @@
                 <input type="date" id="theoryDateInput" class="v2-input-field">
             </div>
 
-            <div class="theory-info-card">
-                <div class="card-title">Excel Report Features:</div>
-                <ul class="features-list">
-                    <li>✅ Professional Corporate Styling</li>
-                    <li>✅ Total Absences Tracking</li>
-                    <li>✅ Behavior & Uniform Logging</li>
-                    <li>✅ Attendance Summary Row</li>
-                </ul>
-            </div>
-
             <button onclick="generateTheoryReport()" class="btn-main theory-download-btn">
                 <span>Download Report</span>
                 <i class="fa-solid fa-file-excel"></i>
+            </button>
+
+            <button onclick="openAdvancedArchiveModal()" class="btn-main theory-download-btn"
+                style="background: linear-gradient(135deg, #0ea5e9, #0284c7); margin-top: 10px;">
+                <span>Advanced Archive</span>
+                <i class="fa-solid fa-chart-gantt"></i>
             </button>
         </div>
     </div>
 </div>
 
 <style>
-    /* التنسيق الإنجليزي الجديد */
     .modern-theory-box {
         max-width: 380px !important;
         padding: 0 !important;
@@ -3567,6 +3562,8 @@
 </style>
 <script type="module" src="./subject-enrollment.js"></script>
 <script type="module" src="./theory-attendance.js"></script>
+<script type="module" src="advanced-archivee.js"></script>
+
 
 
 
