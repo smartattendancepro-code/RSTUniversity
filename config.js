@@ -1,17 +1,18 @@
 
 export const COLLEGE_HALLS = {
 
-    "PT": [ 
-        "E037", "E038", "E039", "E118", "E123", "E124", "E127",
-        "E221", "E222", "E230", "E231", "E233", "E234", "E235",
-        "E236", "E237", "E240", "E241", "E242", "E243", "E245",
-        "E249", "E334", "E335", "E336", "E337", "E338", "E339",
-        "E340", "E344", "E345", "E346", "E347",
-        "019", "025", "037", "038", "039", "118", "121", "123",
-        "124", "127", "131", "132", "133", "134", "231", "335"
+    "PT": [
+        "P112",
+        "P115",
+        "P117",
+        "P206",
+        "P212",
+        "P315",
+        "P318",
+        "D103"
     ],
 
-    "NURS": [ 
+    "NURS": [
         "E037", "E038", "E039", "E118", "E123", "E124", "E127",
         "E221", "E222", "E230", "E231", "E233", "E234", "E235",
         "E236", "E237", "E240", "E241", "E242", "E243", "E245",
@@ -21,19 +22,19 @@ export const COLLEGE_HALLS = {
         "124", "127", "131", "132", "133", "134", "231", "335"
     ],
 
-    "DENT": [ 
+    "DENT": [
     ],
 
-    "CS": [ 
+    "CS": [
     ],
 
-    "PHARM": [ 
+    "PHARM": [
     ],
 
-    "HS": [ 
+    "HS": [
     ],
 
-    "BA": [ 
+    "BA": [
     ]
 };
 
@@ -88,7 +89,8 @@ export const COLLEGE_SUBJECTS = {
         ],
         "third_year": [
             "البحث العلمي في التمريض",
-            "المعلوماتية التمريضية",
+            "المعلوماتية التمريضية د نهال",
+            "اساسيات الجودة د نهال ",
             "الممارسة القائمة على الأدلة"
         ],
         "fourth_year": [
@@ -127,11 +129,51 @@ export const COLLEGE_SUBJECTS = {
     },
 
     "PT": {
-        "first_year": ["علاج 1"],
-        "second_year": ["علاج 2"],
-        "third_year": ["علاج 3 د إيمان"],
-        "fourth_year": ["علاج 4 "],
-        "fifth_year": []
+        "first_year": [
+            "Anatomy II",
+            "Tests and Measurements I",
+            "Biochemistry II",
+            "Hydrotherapy",
+            "Therapeutic Exercises I",
+            "Physiology II",
+            "Technical Writing",
+            "Electro Physical Agents I"
+        ],
+        "second_year": [
+            "Manual Therapy",
+            "Exercise physiology",
+            "Quality Principles",
+            "Physiology IV",
+            "Psychology for handicapped",
+            "Pharmacology",
+            "Biomechanics I",
+            "Anatomy IV"
+        ],
+        "third_year": [
+            "Theories of Internal, Geriatric And ICU",
+            "Nutrition for Internal Medicine and Geriatrics",
+            "First Aid",
+            "Physical Therapy for Internal, Geriatric And ICU",
+            "Fundamental of Management",
+            "Medical Analysis",
+            "Radiology I",
+            "Library And Electronic Research Resources",
+            "Nutrition in the Intensive Care Unit"
+        ],
+        "fourth_year": [],
+        "fifth_year": [],
+        "irregular": [
+            "Tests and Measurements II",
+            "English",
+            "Histology I",
+            "Biology",
+            "Biophysics",
+            "Physiology I",
+            "Biochemistry I",
+            "Therapeutic Exercises II",
+            "Anatomy I",
+            "Pathology"
+        ]
     },
 
     "HS": {
