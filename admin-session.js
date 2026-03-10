@@ -314,6 +314,8 @@ window.closeSessionImmediately = function () {
         if (!user) return;
 
         const actionBtn = document.getElementById('btnConfirmYes') || document.querySelector('.confirm-btn-yes');
+        if (window._sessionClosing) return;
+        window._sessionClosing = true;
         if (actionBtn) {
             actionBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> ' + ((lang === 'ar') ? "جاري المعالجة..." : "Processing...");
             actionBtn.style.pointerEvents = 'none';
@@ -335,10 +337,18 @@ window.closeSessionImmediately = function () {
 
             if (!sessionSnap.exists()) {
                 showToast("No session found", 3000, "#ef4444");
+                window._sessionClosing = false;
                 return;
             }
 
             const settings = sessionSnap.data();
+
+            if (!settings.isActive) {
+                showToast("⚠️ الجلسة اتحفظت بالفعل", 3000, "#f59e0b");
+                window._sessionClosing = false;
+                return;
+            }
+
             const targetGroups = (settings.targetGroups && settings.targetGroups.length > 0)
                 ? settings.targetGroups
                 : ["General"];
@@ -561,7 +571,14 @@ window.closeSessionImmediately = function () {
             if (opCounter > 0) commitPromises.push(currentBatch.commit());
 
 
-            await Promise.all(commitPromises);
+            try {
+                await Promise.all(commitPromises);
+            } catch (batchError) {
+                console.error("Batch failed:", batchError);
+                showToast("⚠️ فشل في حفظ بعض البيانات، جاري إعادة المحاولة...", 4000, "#f59e0b");
+                await new Promise(r => setTimeout(r, 2000));
+                await Promise.all(commitPromises);
+            }
 
             showToast(`✅ تم الحفظ وتحديث السجلات (${processedCount} طالب)`, 4000, "#10b981");
 
@@ -576,6 +593,7 @@ window.closeSessionImmediately = function () {
                 actionBtn.style.opacity = '1';
             }
         } finally {
+            window._sessionClosing = false;
             if (actionBtn) {
                 actionBtn.style.pointerEvents = 'auto';
                 actionBtn.style.opacity = '1';

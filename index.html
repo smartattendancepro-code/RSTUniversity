@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport"
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title data-i18n="app_title">نظام كشف الحضور - جامعة الريادة  </title>
+    <title data-i18n="app_title">نظام كشف الحضور - جامعة الريادة </title>
     <meta name="apple-mobile-web-app-title" content="SAP">
 
     <meta name="mobile-web-app-capable" content="yes">
@@ -3395,13 +3395,16 @@
 <div id="subjectEnrollmentModal" class="modal-overlay" style="z-index: 200000001; display:none;">
     <div class="modal-box" style="padding:0; overflow:hidden;">
         <div class="report-modal-header" style="padding:15px 20px;">
-            <div class="modal-title" style="margin:0; font-size:16px;">📚 تسجيل المواد</div>
+            <div class="modal-title" style="margin:0; font-size:16px;">
+                📚 <span id="enrollmentCollegeTitle">تسجيل المواد</span>
+            </div>
             <button onclick="document.getElementById('subjectEnrollmentModal').style.display='none'"
                 class="btn-close-stylish" style="width:auto; padding:5px 15px;">إغلاق</button>
         </div>
         <div id="collegeSelectorSection" style="display:none; padding:20px; text-align:center;">
             <p style="color:#64748b; font-size:13px; margin-bottom:15px;">لم يتم تحديد كليتك بعد. اختر كليتك:</p>
-            <select id="collegeSelectInput" class="modern-select-input"
+
+            <select id="enrollmentCollegeSelect" class="modern-select-input"
                 style="width:100%; margin-bottom:15px; padding:12px; border-radius:10px; border:1px solid #cbd5e1;">
                 <option value="" disabled selected>-- اختر الكلية --</option>
                 <option value="NURS">كلية التمريض</option>
@@ -3412,21 +3415,25 @@
                 <option value="HS">كلية العلوم الصحية</option>
                 <option value="BA">كلية إدارة الأعمال</option>
             </select>
-            <button onclick="saveAndLoadCollege()" class="btn-main" style="width:100%;">حفظ والمتابعة</button>
+
+            <button id="btnSaveCollege" onclick="saveAndLoadCollege()" class="btn-main" style="width:100%;">حفظ
+                والمتابعة</button>
         </div>
-        <div id="enrollmentListContainer" style="padding:15px; max-height:70vh; overflow-y:auto;"></div>
+        <div id="enrollmentListContainer" style="padding:15px; max-height:70vh; overflow-y:auto; background: #f8fafc;">
+        </div>
     </div>
 </div>
-
 <div id="enrolledStudentsViewModal" class="modal-overlay" style="z-index: 200000002; display:none;">
     <div class="modal-box" style="padding:0; overflow:hidden;">
         <div class="report-modal-header" style="padding:15px 20px;">
-            <div class="modal-title" id="enrolledModalTitle" style="margin:0; font-size:15px;">طلاب المادة</div>
-            <button onclick="document.getElementById('enrolledStudentsViewModal').style.display='none'"
-                class="btn-close-stylish" style="width:auto; padding:5px 15px;">إغلاق</button>
+            <div class="modal-title" id="enrolledSubjectTitle" style="margin:0; font-size:15px;">طلاب المادة</div>
+
+            <button onclick="closeEnrolledStudentsModal()" class="btn-close-stylish"
+                style="width:auto; padding:5px 15px;">إغلاق</button>
         </div>
         <div style="padding:10px 15px;">
-            <input type="text" placeholder="بحث بالاسم أو الكود..." oninput="filterEnrolledStudents(this.value)"
+            <input type="text" id="enrolledSearchInput" placeholder="بحث بالاسم أو الكود..."
+                oninput="filterEnrolledStudents(this.value)"
                 style="width:100%; padding:10px; border-radius:10px; border:1px solid #cbd5e1; margin-bottom:10px;">
         </div>
         <div id="enrolledStudentsList" style="padding:0 15px 15px; max-height:60vh; overflow-y:auto;"></div>
