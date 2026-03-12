@@ -7535,4 +7535,3 @@ window.openSubjectEnrollmentSecurely = async function () {
         if (e.key === "Enter") document.getElementById('confirmPassBtn').click();
     });
 };
-
