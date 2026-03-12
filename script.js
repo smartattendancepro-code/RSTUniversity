@@ -7461,7 +7461,8 @@ window.openSubjectEnrollmentSecurely = async function () {
     if (document.getElementById(modalId)) return;
 
     const modalHTML = `
-        <div id="${modalId}" style="position:fixed; inset:0; background:rgba(15,23,42,0.7); backdrop-filter:blur(8px); z-index:999999; display:flex; align-items:center; justify-content:center; animation: fadeIn 0.3s ease;">
+        <!-- تم تعديل z-index إلى 2147483647 لتكون دائماً في المقدمة -->
+        <div id="${modalId}" style="position:fixed; inset:0; background:rgba(15,23,42,0.7); backdrop-filter:blur(8px); z-index:2147483647; display:flex; align-items:center; justify-content:center; animation: fadeIn 0.3s ease;">
             <div style="background:#fff; width:90%; max-width:340px; border-radius:24px; padding:30px; text-align:center; box-shadow:0 25px 50px -12px rgba(0,0,0,0.5); transform: scale(1); animation: scaleIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);">
                 <div style="width:60px; height:60px; background:#f5f3ff; color:#7c3aed; border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 auto 20px; border:2px solid #ddd6fe;">
                     <i class="fa-solid fa-shield-halved" style="font-size:24px;"></i>
@@ -7469,7 +7470,9 @@ window.openSubjectEnrollmentSecurely = async function () {
                 <h3 style="margin:0 0 10px; font-size:18px; font-weight:900; color:#1e293b;">${lang === 'ar' ? 'منطقة محميّة' : 'Protected Area'}</h3>
                 <p style="margin:0 0 20px; font-size:13px; color:#64748b;">${lang === 'ar' ? 'برجاء إدخال الكود السري للمتابعة' : 'Please enter secret code'}</p>
                 
-                <input type="password" id="secretPassInput" placeholder="••••••••" autofocus
+                <!-- تم إضافة autocomplete و readonly لمنع الملء التلقائي للمتصفح -->
+                <input type="password" id="secretPassInput" placeholder="••••••••" 
+                       autocomplete="new-password" readonly onfocus="this.removeAttribute('readonly');" data-lpignore="true"
                        style="width:100%; padding:12px; border-radius:12px; border:2px solid #e2e8f0; text-align:center; font-size:18px; outline:none; transition:0.2s; margin-bottom:20px;">
                 
                 <div style="display:flex; gap:10px;">
@@ -7487,7 +7490,10 @@ window.openSubjectEnrollmentSecurely = async function () {
 
     document.body.insertAdjacentHTML('beforeend', modalHTML);
     const input = document.getElementById('secretPassInput');
-    input.focus();
+    
+    setTimeout(() => {
+        input.focus();
+    }, 100);
 
     const closeModal = () => document.getElementById(modalId).remove();
 
@@ -7529,3 +7535,4 @@ window.openSubjectEnrollmentSecurely = async function () {
         if (e.key === "Enter") document.getElementById('confirmPassBtn').click();
     });
 };
+
