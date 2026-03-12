@@ -292,4 +292,3 @@ export function getAllSubjectsByCollege(collegeCode) {
 
     return Object.values(collegeData).flat();
 }
-

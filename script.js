@@ -6477,37 +6477,101 @@ window.searchManualStudent = async function () {
     }
 
     try {
-        const checks = [
-            getDoc(doc(db, "students", codeString)),
-            getDocs(query(collection(db, "students"), where("studentCode", "==", codeNumber))),
-            getDocs(query(collection(db, "users"), where("studentCode", "==", codeString)))
-        ];
-
-        const uidCheck = getDoc(doc(db, "taken_student_ids", codeString));
-
-        const [results, uidResult] = await Promise.all([Promise.all(checks), uidCheck]);
-
+        const user = auth.currentUser;
         let sData = null;
-        if (results[0].exists()) {
-            sData = results[0].data();
-        } else {
-            for (let i = 1; i < results.length; i++) {
-                if (!results[i].empty) {
-                    sData = results[i].docs[0].data();
-                    break;
+        let isEnrolledInSubject = false;
+
+        console.log("=== بدء البحث بنظام الأولوية عن:", codeString, "===");
+
+        // ==========================================
+        // 1. البحث في قوائم المواد بنظام "التصنيف والأولوية"
+        // ==========================================
+        const enrollmentsRef = collection(db, "subject_enrollments");
+        const allSnaps = await getDocs(enrollmentsRef);
+
+        let bestStudentMatch = null;
+        let highestPriorityScore = -1;
+        let index = 0;
+
+        for (let docSnap of allSnaps.docs) {
+            index++;
+            const data = docSnap.data();
+
+            if (data.students && Array.isArray(data.students)) {
+                const student = data.students.find(s =>
+                    String(s.id).trim() === codeString ||
+                    String(s.studentCode).trim() === codeString
+                );
+
+                if (student) {
+                    // إعطاء كل قائمة نقاط لتحديد الأفضلية
+                    let score = index;
+
+                    // 🔴 السر هنا: نعطي أولوية قصوى (مليون نقطة) للقائمة التي رفعها الدكتور الحالي
+                    // هذا يضمن أن اسم الطالب الإنجليزي الخاص بقائمتك سيتغلب على أي قوائم أخرى!
+                    if (user && data.doctorUID === user.uid) {
+                        score += 1000000;
+                    }
+
+                    // تحديث أفضل نتيجة إذا كان السكور أعلى
+                    if (score > highestPriorityScore) {
+                        highestPriorityScore = score;
+                        bestStudentMatch = student;
+                        console.log("⬆️ تم العثور على تطابق أفضل في قائمة الدكتور:", data.doctorName);
+                    }
                 }
             }
         }
 
+        if (bestStudentMatch) {
+            console.log("✅ النتيجة الفائزة من القائمة:", bestStudentMatch.name);
+            sData = {
+                name: bestStudentMatch.name || bestStudentMatch.fullName || "طالب مسجل",
+                studentCode: bestStudentMatch.id || bestStudentMatch.studentCode || codeString,
+                group: bestStudentMatch.group || ""
+            };
+            isEnrolledInSubject = true;
+        }
+
+        // ==========================================
+        // 2. البحث في قاعدة بيانات الكلية (إذا لم ينجح في المواد)
+        // ==========================================
+        if (!isEnrolledInSubject) {
+            console.log("⚠️ لم نجده في قوائم المواد، جاري البحث كطالب عام...");
+
+            const checks = [
+                getDoc(doc(db, "students", codeString)),
+                getDocs(query(collection(db, "students"), where("studentCode", "==", codeNumber))),
+                getDocs(query(collection(db, "users"), where("studentCode", "==", codeString)))
+            ];
+
+            const results = await Promise.all(checks);
+
+            if (results[0].exists()) {
+                sData = results[0].data();
+            } else {
+                for (let i = 1; i < results.length; i++) {
+                    if (!results[i].empty) {
+                        sData = results[i].docs[0].data();
+                        break;
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // 3. عرض النتيجة النهائية
+        // ==========================================
         if (!sData) {
-            alert("❌ هذا الكود غير مسجل في قاعدة البيانات!");
+            alert("❌ هذا الكود غير مسجل في قاعدة البيانات أو قوائم المواد!");
             if (btn) { btn.innerHTML = oldText; btn.disabled = false; }
             return;
         }
 
         let targetUID = codeString;
-        if (uidResult.exists()) {
-            targetUID = uidResult.data().saved_uid || codeString;
+        const uidCheck = await getDoc(doc(db, "taken_student_ids", codeString));
+        if (uidCheck.exists()) {
+            targetUID = uidCheck.data().saved_uid || codeString;
         }
 
         const studentName = sData.name || sData.fullName || "Student";
@@ -6521,7 +6585,14 @@ window.searchManualStudent = async function () {
         const nameEl = document.getElementById('previewStudentName');
         const idEl = document.getElementById('previewStudentID');
 
-        if (nameEl) nameEl.innerText = studentName;
+        if (nameEl) {
+            const badgeHTML = isEnrolledInSubject
+                ? `<span style="font-size:10px; background:#10b981; color:#fff; padding:2px 6px; border-radius:4px; margin-right:8px; vertical-align:middle;">مسجل بالمادة</span>`
+                : `<span style="font-size:10px; background:#f59e0b; color:#fff; padding:2px 6px; border-radius:4px; margin-right:8px; vertical-align:middle;">طالب عام</span>`;
+
+            nameEl.innerHTML = `${badgeHTML} ${studentName}`;
+        }
+
         if (idEl) idEl.innerText = "#" + codeString;
 
         const step1 = document.getElementById('manualInputStep');
@@ -6530,7 +6601,7 @@ window.searchManualStudent = async function () {
         if (step2) step2.style.display = 'block';
 
     } catch (error) {
-        console.error(error);
+        console.error("Search Error:", error);
         alert("حدث خطأ أثناء البحث: " + error.message);
     } finally {
         if (btn) { btn.innerHTML = oldText; btn.disabled = false; }
@@ -7490,7 +7561,7 @@ window.openSubjectEnrollmentSecurely = async function () {
 
     document.body.insertAdjacentHTML('beforeend', modalHTML);
     const input = document.getElementById('secretPassInput');
-    
+
     setTimeout(() => {
         input.focus();
     }, 100);
