@@ -46,7 +46,6 @@ export const COLLEGE_SUBJECTS = {
             "اساسيات تمريض 1 نظري G 1",
             "اساسيات تمريض 1 نظري G 2",
             "اساسيات تمريض 1 نظري G 3",
-            "اساسيات تمريض 1 نظري ( د وفاء )",
             "اساسيات تمريض 1 عملي",
             "التقييم الصحي نظري G 1",
             "التقييم الصحي نظري G 2",
@@ -346,3 +345,4 @@ export function getAllSubjectsByCollege(collegeCode) {
 
     return Object.values(collegeData).flat();
 }
+
