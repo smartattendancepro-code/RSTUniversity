@@ -98,6 +98,7 @@ export const COLLEGE_SUBJECTS = {
             "اساسيات الجودة د نهال 4",
             "قضايا مجتمعية د نسرين  1",
             "قضايا مجتمعية د نسرين 2",
+            "قضايا مجتمعية د نسرين 3",
             "الممارسة القائمة على الأدلة"
         ],
         "fourth_year": [
@@ -291,3 +292,4 @@ export function getAllSubjectsByCollege(collegeCode) {
 
     return Object.values(collegeData).flat();
 }
+
