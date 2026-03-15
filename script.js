@@ -3998,6 +3998,7 @@ document.addEventListener('click', (e) => {
         const pass = document.getElementById('facPass').value;
         const passConfirm = document.getElementById('facPassConfirm').value;
         const masterKeyInput = document.getElementById('facMasterKey').value.trim();
+        const college = document.getElementById('facCollege').value;
 
         if (!name || !gender || !jobTitle || !email || !pass || !masterKeyInput) {
             showToast(_t('msg_missing_data', "⚠️ يرجى ملء جميع الحقول المطلوبة"), 3000, "#f59e0b");
@@ -4032,7 +4033,7 @@ document.addEventListener('click', (e) => {
         btn.style.pointerEvents = 'none';
 
         try {
-            const BACKEND_BASE_URL = "https://nursing-backend-rej8.vercel.app";
+            const BACKEND_BASE_URL = "https://backendcollege-psi.vercel.app";
 
             const response = await fetch(`${BACKEND_BASE_URL}/api/registerFaculty`, {
                 method: 'POST',
@@ -4044,6 +4045,7 @@ document.addEventListener('click', (e) => {
                     gender: gender,
                     role: role,
                     jobTitle: jobTitle,
+                    college: college,
                     masterKey: masterKeyInput
                 })
             });
@@ -4236,6 +4238,7 @@ document.addEventListener('click', (e) => {
                     role: userData.role,
                     jobTitle: userData.jobTitle || userData.subject || "Faculty Member",
                     avatarClass: userData.avatarClass || "fa-user-doctor",
+                    college: userData.college || "NURS",
                     uid: user.uid,
                     type: 'faculty'
                 };
@@ -4392,6 +4395,7 @@ document.addEventListener('click', (e) => {
                     jobTitle: data.jobTitle,
                     subject: data.subject,
                     avatarClass: data.avatarClass || "fa-user-doctor",
+                    college: data.college || "NURS",
                     uid: user.uid,
                     type: 'faculty',
                     status_message: data.status_message || ""
@@ -6477,101 +6481,37 @@ window.searchManualStudent = async function () {
     }
 
     try {
-        const user = auth.currentUser;
+        const checks = [
+            getDoc(doc(db, "students", codeString)),
+            getDocs(query(collection(db, "students"), where("studentCode", "==", codeNumber))),
+            getDocs(query(collection(db, "users"), where("studentCode", "==", codeString)))
+        ];
+
+        const uidCheck = getDoc(doc(db, "taken_student_ids", codeString));
+
+        const [results, uidResult] = await Promise.all([Promise.all(checks), uidCheck]);
+
         let sData = null;
-        let isEnrolledInSubject = false;
-
-        console.log("=== بدء البحث بنظام الأولوية عن:", codeString, "===");
-
-        // ==========================================
-        // 1. البحث في قوائم المواد بنظام "التصنيف والأولوية"
-        // ==========================================
-        const enrollmentsRef = collection(db, "subject_enrollments");
-        const allSnaps = await getDocs(enrollmentsRef);
-
-        let bestStudentMatch = null;
-        let highestPriorityScore = -1;
-        let index = 0;
-
-        for (let docSnap of allSnaps.docs) {
-            index++;
-            const data = docSnap.data();
-
-            if (data.students && Array.isArray(data.students)) {
-                const student = data.students.find(s =>
-                    String(s.id).trim() === codeString ||
-                    String(s.studentCode).trim() === codeString
-                );
-
-                if (student) {
-                    // إعطاء كل قائمة نقاط لتحديد الأفضلية
-                    let score = index;
-
-                    // 🔴 السر هنا: نعطي أولوية قصوى (مليون نقطة) للقائمة التي رفعها الدكتور الحالي
-                    // هذا يضمن أن اسم الطالب الإنجليزي الخاص بقائمتك سيتغلب على أي قوائم أخرى!
-                    if (user && data.doctorUID === user.uid) {
-                        score += 1000000;
-                    }
-
-                    // تحديث أفضل نتيجة إذا كان السكور أعلى
-                    if (score > highestPriorityScore) {
-                        highestPriorityScore = score;
-                        bestStudentMatch = student;
-                        console.log("⬆️ تم العثور على تطابق أفضل في قائمة الدكتور:", data.doctorName);
-                    }
+        if (results[0].exists()) {
+            sData = results[0].data();
+        } else {
+            for (let i = 1; i < results.length; i++) {
+                if (!results[i].empty) {
+                    sData = results[i].docs[0].data();
+                    break;
                 }
             }
         }
 
-        if (bestStudentMatch) {
-            console.log("✅ النتيجة الفائزة من القائمة:", bestStudentMatch.name);
-            sData = {
-                name: bestStudentMatch.name || bestStudentMatch.fullName || "طالب مسجل",
-                studentCode: bestStudentMatch.id || bestStudentMatch.studentCode || codeString,
-                group: bestStudentMatch.group || ""
-            };
-            isEnrolledInSubject = true;
-        }
-
-        // ==========================================
-        // 2. البحث في قاعدة بيانات الكلية (إذا لم ينجح في المواد)
-        // ==========================================
-        if (!isEnrolledInSubject) {
-            console.log("⚠️ لم نجده في قوائم المواد، جاري البحث كطالب عام...");
-
-            const checks = [
-                getDoc(doc(db, "students", codeString)),
-                getDocs(query(collection(db, "students"), where("studentCode", "==", codeNumber))),
-                getDocs(query(collection(db, "users"), where("studentCode", "==", codeString)))
-            ];
-
-            const results = await Promise.all(checks);
-
-            if (results[0].exists()) {
-                sData = results[0].data();
-            } else {
-                for (let i = 1; i < results.length; i++) {
-                    if (!results[i].empty) {
-                        sData = results[i].docs[0].data();
-                        break;
-                    }
-                }
-            }
-        }
-
-        // ==========================================
-        // 3. عرض النتيجة النهائية
-        // ==========================================
         if (!sData) {
-            alert("❌ هذا الكود غير مسجل في قاعدة البيانات أو قوائم المواد!");
+            alert("❌ هذا الكود غير مسجل في قاعدة البيانات!");
             if (btn) { btn.innerHTML = oldText; btn.disabled = false; }
             return;
         }
 
         let targetUID = codeString;
-        const uidCheck = await getDoc(doc(db, "taken_student_ids", codeString));
-        if (uidCheck.exists()) {
-            targetUID = uidCheck.data().saved_uid || codeString;
+        if (uidResult.exists()) {
+            targetUID = uidResult.data().saved_uid || codeString;
         }
 
         const studentName = sData.name || sData.fullName || "Student";
@@ -6585,14 +6525,7 @@ window.searchManualStudent = async function () {
         const nameEl = document.getElementById('previewStudentName');
         const idEl = document.getElementById('previewStudentID');
 
-        if (nameEl) {
-            const badgeHTML = isEnrolledInSubject
-                ? `<span style="font-size:10px; background:#10b981; color:#fff; padding:2px 6px; border-radius:4px; margin-right:8px; vertical-align:middle;">مسجل بالمادة</span>`
-                : `<span style="font-size:10px; background:#f59e0b; color:#fff; padding:2px 6px; border-radius:4px; margin-right:8px; vertical-align:middle;">طالب عام</span>`;
-
-            nameEl.innerHTML = `${badgeHTML} ${studentName}`;
-        }
-
+        if (nameEl) nameEl.innerText = studentName;
         if (idEl) idEl.innerText = "#" + codeString;
 
         const step1 = document.getElementById('manualInputStep');
@@ -6601,7 +6534,7 @@ window.searchManualStudent = async function () {
         if (step2) step2.style.display = 'block';
 
     } catch (error) {
-        console.error("Search Error:", error);
+        console.error(error);
         alert("حدث خطأ أثناء البحث: " + error.message);
     } finally {
         if (btn) { btn.innerHTML = oldText; btn.disabled = false; }
@@ -6743,21 +6676,6 @@ window.resetManualModal = function () {
     }, 300);
 };
 
-window.addEventListener('load', () => {
-    const manualBtn = document.getElementById("btnConfirmManualAdd");
-
-    if (manualBtn) {
-        console.log("✅ تم العثور على زر الإضافة وربطه بنجاح.");
-
-        const newBtn = manualBtn.cloneNode(true);
-        manualBtn.parentNode.replaceChild(newBtn, manualBtn);
-
-        newBtn.addEventListener("click", window.handleManualAdd);
-
-    } else {
-        console.error("❌ زر الإضافة غير موجود في HTML! تأكد من الـ ID: btnConfirmManualAdd");
-    }
-});
 window.filterLiveStudents = function () {
     const input = document.getElementById('liveSearchInput');
     const filter = input.value.toUpperCase().trim();
