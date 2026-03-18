@@ -1160,22 +1160,27 @@ document.addEventListener('click', (e) => {
         dataArray.forEach(item => {
             const div = document.createElement('div');
             div.className = 'list-item-option';
-            div.innerText = item;
-            div.style.cssText = "padding: 10px; border-bottom: 1px solid #f1f5f9; cursor: pointer; font-size: 13px; font-weight:600; color:#334155; transition:0.1s;";
+            const isEnrolled = item.includes('⭐');
+            const cleanItem = item.replace(' ⭐', '').trim();
+
+            // ✅ كل الـ styles في cssText مرة واحدة
+            div.style.cssText = "padding:10px; border-bottom:1px solid #f1f5f9; cursor:pointer; font-size:13px; font-weight:600; color:#334155; transition:0.1s; display:flex; justify-content:space-between; align-items:center; direction:rtl;";
+
+            div.innerHTML = `
+            <span>${cleanItem}</span>
+            ${isEnrolled ? `<span style="background:#fef9c3;color:#ca8a04;border:1px solid #fde68a;border-radius:20px;padding:2px 8px;font-size:10px;font-weight:800;flex-shrink:0;">مسجلة ⭐</span>` : ''}
+        `;
 
             div.onclick = function () {
-                const siblings = container.querySelectorAll('.list-item-option');
-                siblings.forEach(el => {
+                container.querySelectorAll('.list-item-option').forEach(el => {
                     el.style.backgroundColor = "transparent";
                     el.style.color = "#334155";
                     el.style.borderLeft = "none";
                 });
-
                 this.style.backgroundColor = "#e0f2fe";
                 this.style.color = "#0284c7";
                 this.style.borderLeft = "4px solid #0284c7";
-
-                document.getElementById(hiddenInputId).value = item;
+                document.getElementById(hiddenInputId).value = cleanItem;
             };
 
             container.appendChild(div);
@@ -7504,7 +7509,7 @@ window.openSubjectEnrollmentSecurely = async function () {
         this.style.pointerEvents = 'none';
 
         try {
-            
+
             let correctCode = _cachedCode;
 
             if (!correctCode) {

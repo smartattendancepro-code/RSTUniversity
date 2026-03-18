@@ -5,7 +5,7 @@ import {
 } from './config.js';
 import { SmartHistory } from './SmartHistory.js';
 import {
-    doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs,
+    doc, getDoc, setDoc, updateDoc,deleteDoc, collection, query, where, getDocs,
     onSnapshot, serverTimestamp, increment, writeBatch, orderBy, limit,
     arrayUnion, arrayRemove, getCountFromServer
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
@@ -88,14 +88,15 @@ window.toggleSessionState = async function () {
         const collegeLetterMap = { "NURS": "N", "PT": "P", "PHARM": "C", "DENT": "D", "CS": "T", "BA": "B", "HS": "H" };
         let detectedLetter = "N";
 
-        // جلب كلية الدكتور من Firestore
         const user = auth.currentUser;
         if (user) {
+            let doctorCollege = "NURS"; 
+
             try {
                 const facSnap = await getDoc(doc(db, "faculty_members", user.uid));
                 if (facSnap.exists()) {
                     const facData = facSnap.data();
-                    const doctorCollege = facData.college || "NURS";
+                    doctorCollege = facData.college || "NURS"; 
                     const doctorLevel = facData.level || null;
 
                     if (doctorLevel) {
@@ -113,23 +114,26 @@ window.toggleSessionState = async function () {
 
             let enrolledSubjectNames = new Set();
             try {
-                const enrollSnap = await getDocs(query(
-                    collection(db, "subject_enrollments"),
-                    where("doctorUID", "==", user.uid)
-                ));
-                const sharedSnap = await getDocs(query(
-                    collection(db, "subject_enrollments"),
-                    where("sharedWithAll", "==", true),
-                    where("college", "==", doctorCollege)  // ✅ doctorCollege متاح
-                ));
+                const [enrollSnap, sharedSnap] = await Promise.all([
+                    getDocs(query(
+                        collection(db, "subject_enrollments"),
+                        where("doctorUID", "==", user.uid)
+                    )),
+                    getDocs(query(
+                        collection(db, "subject_enrollments"),
+                        where("sharedWithAll", "==", true),
+                        where("college", "==", doctorCollege)
+                    ))
+                ]);
                 enrollSnap.forEach(d => { if (d.data().subjectName) enrolledSubjectNames.add(d.data().subjectName); });
                 sharedSnap.forEach(d => { if (d.data().subjectName) enrolledSubjectNames.add(d.data().subjectName); });
-            } catch (e) { console.warn("Enrollment fetch skipped:", e); }
+            } catch (e) {
+                console.warn("Enrollment fetch skipped:", e);
+            }
 
-            // إضافة ✅ للمواد المسجلة
             subjectsArray = subjectsArray.map(sub => {
                 const cleanSub = sub.replace("🕒 ", "").trim();
-                return enrolledSubjectNames.has(cleanSub) ? `✅ ${sub}` : sub;
+                return enrolledSubjectNames.has(cleanSub) ? `${sub} ⭐` : sub;
             });
 
             const historySubs = SmartHistory.get(`history_subjects_${user.uid}`);
@@ -145,7 +149,6 @@ window.toggleSessionState = async function () {
             }
         }
 
-        // تحديث placeholder الجروب حسب الكلية
         const groupEl = document.getElementById('modalGroupInput');
         if (groupEl) groupEl.placeholder = `e.g. 1${detectedLetter}1`;
 
@@ -174,7 +177,6 @@ window.confirmSessionStart = async function () {
     let resolvedGroups = ["GENERAL"];
 
     if (rawGroup !== "") {
-        // جلب حرف الكلية
         const collegeLetterMap = {
             "NURS": "N", "PT": "P", "PHARM": "C", "DENT": "D", "CS": "T", "BA": "B", "HS": "H"
         };
@@ -313,21 +315,17 @@ window.confirmSessionStart = async function () {
     }
 };
 
+
 window.closeSessionImmediately = function () {
-
     const confirmBtn = document.getElementById('btnConfirmYes') || document.querySelector('.swal2-confirm');
-
     if (confirmBtn) {
         confirmBtn.style.pointerEvents = 'auto';
         confirmBtn.style.opacity = '1';
         confirmBtn.disabled = false;
     }
-
     const lang = localStorage.getItem('sys_lang') || 'ar';
-
     const title = (lang === 'ar') ? "إنهاء الجلسة وحفظ الغياب" : "End Session";
     const msg = (lang === 'ar') ? "سيتم إغلاق البوابة وحفظ السجلات نهائياً." : "Session will be closed and records saved.";
-
     if (confirmBtn) confirmBtn.innerText = (lang === 'ar') ? "تأكيد وحفظ ✅" : "Confirm & Save ✅";
 
     showModernConfirm(title, msg, async function () {
@@ -352,10 +350,13 @@ window.closeSessionImmediately = function () {
                 window.deanRadarUnsubscribe();
                 window.deanRadarUnsubscribe = null;
             }
+            if (window.unsubscribeHeaderSession) {
+                window.unsubscribeHeaderSession();
+                window.unsubscribeHeaderSession = null;
+            }
 
             const sessionRef = doc(db, "active_sessions", user.uid);
             const sessionSnap = await getDoc(sessionRef);
-
             if (!sessionSnap.exists()) {
                 showToast("No session found", 3000, "#ef4444");
                 window._sessionClosing = false;
@@ -363,17 +364,32 @@ window.closeSessionImmediately = function () {
             }
 
             const settings = sessionSnap.data();
-
             if (!settings.isActive) {
                 showToast("⚠️ الجلسة اتحفظت بالفعل", 3000, "#f59e0b");
                 window._sessionClosing = false;
                 return;
             }
 
-            const targetGroups = (settings.targetGroups && settings.targetGroups.length > 0)
-                ? settings.targetGroups
-                : ["General"];
+            const progressRef = doc(db, "active_sessions", user.uid, "close_progress", "current");
+            const progressSnap = await getDoc(progressRef);
+            let lastCompletedBatch = -1; 
+            let totalBatches = 0;
 
+            if (progressSnap.exists()) {
+                const prog = progressSnap.data();
+                if (prog.status === 'in_progress' && prog.lastSuccessfulBatch !== undefined) {
+                    lastCompletedBatch = prog.lastSuccessfulBatch;
+                    totalBatches = prog.totalBatches;
+                    console.log(`🔄 استئناف الإغلاق من دفعة رقم ${lastCompletedBatch + 1}`);
+                    showToast(`🔄 استكمال الإغلاق من نقطة التوقف...`, 4000, "#3b82f6");
+                } else if (prog.status === 'completed') {
+                    console.warn("⚠️ Progress موجود بحالة completed ولكن الجلسة نشطة، سيتم إعادة التشغيل.");
+                    await deleteDoc(progressRef); 
+                    lastCompletedBatch = -1;
+                }
+            }
+
+            const targetGroups = settings.targetGroups?.length ? settings.targetGroups : ["General"];
             const now = new Date();
             const d = String(now.getDate()).padStart(2, '0');
             const m = String(now.getMonth() + 1).padStart(2, '0');
@@ -383,169 +399,21 @@ window.closeSessionImmediately = function () {
 
             const partsRef = collection(db, "active_sessions", user.uid, "participants");
             const partsSnap = await getDocs(partsRef);
-
-            let processedCount = 0;
-            const currentDocName = settings.doctorName || "Doctor";
-
-            const BATCH_LIMIT = 450;
-            let currentBatch = writeBatch(db);
-            let opCounter = 0;
-            const commitPromises = [];
-
-            const pushBatch = () => {
-                commitPromises.push(currentBatch.commit());
-                currentBatch = writeBatch(db);
-                opCounter = 0;
-            };
+            const allParticipants = partsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
             const rawSubject = settings.allowedSubject || "General";
             const cleanSubKey = rawSubject.trim().replace(/\s+/g, '_').replace(/[^\w\u0600-\u06FF]/g, '');
+            const currentDocName = settings.doctorName || "Doctor";
 
-            partsSnap.forEach(docSnap => {
-                const p = docSnap.data();
+            const attendedParticipants = allParticipants.filter(p => p.status === 'active' || p.status === 'on_break');
+            const attendedIds = new Set(attendedParticipants.map(p => p.id));
 
-                if (p.status === "active" || p.status === "on_break") {
-
-                    const recID = `${p.id}_${fixedDateStr.replace(/\//g, '-')}_${cleanSubKey}`;
-                    const collectionName = `attendance_${settings.college || "NURS"}`;
-                    const attRef = doc(db, collectionName, recID);
-
-                    let finalGroup = (p.group && p.group !== "General") ? p.group : targetGroups[0];
-                    let notesText = "منضبط";
-                    if (p.isUnruly) notesText = "غير منضبط - مشاغب";
-                    else if (p.isUniformViolation) notesText = "مخالفة زي";
-
-                    currentBatch.set(attRef, {
-                        id: p.id,
-                        name: p.name,
-                        subject: rawSubject,
-                        college: settings.college || "NURS",
-                        hall: settings.hall,
-                        group: finalGroup,
-                        date: fixedDateStr,
-                        time_str: p.time_str || closeTimeStr,
-                        segment_count: p.segment_count || 1,
-                        notes: notesText,
-                        timestamp: serverTimestamp(),
-                        status: "ATTENDED",
-                        doctorUID: user.uid,
-                        doctorName: currentDocName,
-                        feedback_status: "pending",
-                        feedback_rating: 0,
-                        isUnruly: p.isUnruly || false,
-                        isUniformViolation: p.isUniformViolation || false
-                    });
-                    opCounter++;
-
-                    const globalRef = doc(db, "attendance", recID);
-                    currentBatch.set(globalRef, {
-                        id: p.id,
-                        name: p.name,
-                        subject: rawSubject,
-                        college: settings.college || "NURS",
-                        hall: settings.hall,
-                        group: finalGroup,
-                        date: fixedDateStr,
-                        time_str: p.time_str || closeTimeStr,
-                        segment_count: p.segment_count || 1,
-                        notes: notesText,
-                        timestamp: serverTimestamp(),
-                        status: "ATTENDED",
-                        doctorUID: user.uid,
-                        doctorName: currentDocName,
-                        feedback_status: "pending",
-                        feedback_rating: 0,
-                        isUnruly: p.isUnruly || false,
-                        isUniformViolation: p.isUniformViolation || false
-                    });
-                    opCounter++;
-
-                    const studentStatsRef = doc(db, "student_stats", p.uid || p.id);
-
-                    let statsUpdate = {
-                        group: finalGroup,
-                        studentID: p.id,
-                        last_updated: serverTimestamp(),
-                        attended: {
-                            [cleanSubKey]: increment(1)
-                        }
-                    };
-
-                    if (p.isUnruly) statsUpdate.cumulative_unruly = increment(1);
-                    if (p.isUniformViolation) statsUpdate.cumulative_uniform = increment(1);
-
-                    currentBatch.set(studentStatsRef, statsUpdate, { merge: true });
-                    opCounter++;
-                    processedCount++;
-                }
-
-                currentBatch.delete(docSnap.ref);
-                opCounter++;
-                if (opCounter >= BATCH_LIMIT) pushBatch();
-            });
-
-            if (targetGroups.length > 0) {
-                targetGroups.forEach(groupName => {
-                    if (!groupName) return;
-                    const groupRef = doc(db, "groups_stats", groupName);
-                    currentBatch.set(groupRef, {
-                        [`subjects.${cleanSubKey}.total_sessions_held`]: increment(1),
-                        last_updated: serverTimestamp()
-                    }, { merge: true });
-                    opCounter++;
-                    if (opCounter >= BATCH_LIMIT) pushBatch();
-                });
-            }
-
-
-            const safeDateID = fixedDateStr.replace(/\//g, '-');
-
-            targetGroups.forEach(grp => {
-                const uniqueCounterID = `${safeDateID}_${cleanSubKey}_${grp}`;
-
-                const counterRef = doc(db, "course_counters", uniqueCounterID);
-
-                currentBatch.set(counterRef, {
-                    subject: rawSubject,
-                    targetGroups: [grp],
-                    date: fixedDateStr,
-                    timestamp: serverTimestamp(),
-                    doctorUID: user.uid,
-                    academic_year: y.toString()
-                });
-
-                opCounter++;
-                if (opCounter >= BATCH_LIMIT) pushBatch();
-            });
-
-            currentBatch.update(sessionRef, { isActive: false, isDoorOpen: false });
-            opCounter++;
-
-            // حساب الغائبين من قائمة التسجيل
-            if (settings.enrolledStudentIds && settings.enrolledStudentIds.length > 0) {
-
-                // IDs الطلاب اللي حضروا فعلاً
-                const attendedIds = new Set(
-                    partsSnap.docs
-                        .filter(d => {
-                            const st = d.data().status;
-                            return st === 'active' || st === 'on_break';
-                        })
-                        .map(d => d.data().id)
-                );
-
-                // الغائبين = المسجلين - الحاضرين
+            let absentStudentsData = [];
+            if (settings.enrolledStudentIds?.length) {
                 const absentIds = settings.enrolledStudentIds.filter(id => !attendedIds.has(id));
-
-                console.log(`📊 Attended: ${attendedIds.size} | Absent: ${absentIds.length}`);
-
-                // جلب بيانات الطلاب الغائبين من subject_enrollments
-                let absentStudentsData = [];
                 if (settings.enrollmentDocId) {
                     try {
-                        const enrollSnap = await getDoc(
-                            doc(db, "subject_enrollments", settings.enrollmentDocId)
-                        );
+                        const enrollSnap = await getDoc(doc(db, "subject_enrollments", settings.enrollmentDocId));
                         if (enrollSnap.exists()) {
                             const allStudents = enrollSnap.data().students || [];
                             absentStudentsData = allStudents.filter(s => absentIds.includes(s.id));
@@ -554,60 +422,190 @@ window.closeSessionImmediately = function () {
                         console.warn("Absent data fetch skipped:", e);
                     }
                 }
+            }
 
-                absentStudentsData.forEach(student => {
-                    const absentRecID = `${student.id}_${fixedDateStr.replace(/\//g, '-')}_${cleanSubKey}_ABSENT`;
-                    const absentRef = doc(db, `attendance_${settings.college || "NURS"}`, absentRecID);
+            const BATCH_LIMIT = 400; 
+            let batches = [];
+            let currentBatch = writeBatch(db);
+            let opCounter = 0;
+            let batchIndex = 0;
 
-                    currentBatch.set(absentRef, {
-                        id: student.id,
-                        name: student.name,
-                        subject: rawSubject,
-                        college: settings.college || "NURS",
-                        hall: settings.hall,
-                        group: student.group || targetGroups[0] || "General",
-                        date: fixedDateStr,
-                        time_str: "--:--",
-                        notes: "غائب",
-                        timestamp: serverTimestamp(),
-                        status: "ABSENT",
-                        doctorUID: user.uid,
-                        doctorName: currentDocName,
-                        feedback_status: "none",
-                        isUnruly: false,
-                        isUniformViolation: false
-                    });
-                    opCounter++;
-                    if (opCounter >= BATCH_LIMIT) pushBatch();
+            const addOperation = (callback) => {
+                callback(currentBatch);
+                opCounter++;
+                if (opCounter >= BATCH_LIMIT) {
+                    batches.push({ batch: currentBatch, index: batchIndex++ });
+                    currentBatch = writeBatch(db);
+                    opCounter = 0;
+                }
+            };
+
+            attendedParticipants.forEach(p => {
+                const recID = `${p.id}_${fixedDateStr.replace(/\//g, '-')}_${cleanSubKey}`;
+                const collectionName = `attendance_${settings.college || "NURS"}`;
+                const attRef = doc(db, collectionName, recID);
+                const globalRef = doc(db, "attendance", recID);
+                const studentStatsRef = doc(db, "student_stats", p.uid || p.id);
+                const finalGroup = (p.group && p.group !== "General") ? p.group : targetGroups[0];
+                let notesText = "منضبط";
+                if (p.isUnruly) notesText = "غير منضبط - مشاغب";
+                else if (p.isUniformViolation) notesText = "مخالفة زي";
+
+                addOperation(b => b.set(attRef, {
+                    id: p.id, name: p.name, subject: rawSubject, college: settings.college || "NURS",
+                    hall: settings.hall, group: finalGroup, date: fixedDateStr, time_str: p.time_str || closeTimeStr,
+                    segment_count: p.segment_count || 1, notes: notesText, timestamp: serverTimestamp(),
+                    status: "ATTENDED", doctorUID: user.uid, doctorName: currentDocName,
+                    feedback_status: "pending", feedback_rating: 0,
+                    isUnruly: p.isUnruly || false, isUniformViolation: p.isUniformViolation || false
+                }));
+
+                addOperation(b => b.set(globalRef, {
+                    id: p.id, name: p.name, subject: rawSubject, college: settings.college || "NURS",
+                    hall: settings.hall, group: finalGroup, date: fixedDateStr, time_str: p.time_str || closeTimeStr,
+                    segment_count: p.segment_count || 1, notes: notesText, timestamp: serverTimestamp(),
+                    status: "ATTENDED", doctorUID: user.uid, doctorName: currentDocName,
+                    feedback_status: "pending", feedback_rating: 0,
+                    isUnruly: p.isUnruly || false, isUniformViolation: p.isUniformViolation || false
+                }));
+
+                let statsUpdate = {
+                    group: finalGroup, studentID: p.id, last_updated: serverTimestamp(),
+                    attended: { [cleanSubKey]: increment(1) }
+                };
+                if (p.isUnruly) statsUpdate.cumulative_unruly = increment(1);
+                if (p.isUniformViolation) statsUpdate.cumulative_uniform = increment(1);
+                addOperation(b => b.set(studentStatsRef, statsUpdate, { merge: true }));
+
+                addOperation(b => b.delete(doc(db, "active_sessions", user.uid, "participants", p.id)));
+            });
+
+            absentStudentsData.forEach(student => {
+                const absentRecID = `${student.id}_${fixedDateStr.replace(/\//g, '-')}_${cleanSubKey}_ABSENT`;
+                const absentRef = doc(db, `attendance_${settings.college || "NURS"}`, absentRecID);
+                addOperation(b => b.set(absentRef, {
+                    id: student.id, name: student.name, subject: rawSubject,
+                    college: settings.college || "NURS", hall: settings.hall,
+                    group: student.group || targetGroups[0] || "General", date: fixedDateStr,
+                    time_str: "--:--", notes: "غائب", timestamp: serverTimestamp(),
+                    status: "ABSENT", doctorUID: user.uid, doctorName: currentDocName,
+                    feedback_status: "none", isUnruly: false, isUniformViolation: false
+                }));
+            });
+
+            targetGroups.forEach(groupName => {
+                if (!groupName) return;
+                const groupRef = doc(db, "groups_stats", groupName);
+                addOperation(b => b.set(groupRef, {
+                    [`subjects.${cleanSubKey}.total_sessions_held`]: increment(1),
+                    last_updated: serverTimestamp()
+                }, { merge: true }));
+            });
+
+            targetGroups.forEach(grp => {
+                const uniqueCounterID = `${fixedDateStr.replace(/\//g, '-')}_${cleanSubKey}_${grp}`;
+                const counterRef = doc(db, "course_counters", uniqueCounterID);
+                addOperation(b => b.set(counterRef, {
+                    subject: rawSubject, targetGroups: [grp], date: fixedDateStr,
+                    timestamp: serverTimestamp(), doctorUID: user.uid, academic_year: y.toString()
+                }));
+            });
+
+            addOperation(b => b.update(sessionRef, { isActive: false, isDoorOpen: false }));
+
+            if (opCounter > 0) {
+                batches.push({ batch: currentBatch, index: batchIndex++ });
+            }
+
+            totalBatches = batches.length;
+
+            if (totalBatches === 0) {
+                await updateDoc(sessionRef, { isActive: false, isDoorOpen: false });
+                showToast("✅ لا يوجد طلاب للحفظ، تم إنهاء الجلسة", 3000, "#10b981");
+                setTimeout(() => location.reload(), 1500);
+                return;
+            }
+
+            if (lastCompletedBatch === -1) {
+                await setDoc(progressRef, {
+                    status: 'in_progress',
+                    totalBatches,
+                    lastSuccessfulBatch: -1,
+                    startedAt: serverTimestamp(),
+                    doctorUID: user.uid
                 });
-
-                if (absentIds.length > 0) {
-                    showToast(
-                        `✅ تم الحفظ: ${attendedIds.size} حضور | ${absentIds.length} غياب`,
-                        5000, "#10b981"
-                    );
+            } else {
+                if (totalBatches !== progressSnap.data().totalBatches) {
+                    console.error("❌ عدم تطابق عدد الدفعات في الاستئناف");
+                    showToast("خطأ في استئناف العملية، سيتم البدء من جديد", 4000, "#ef4444");
+                    lastCompletedBatch = -1;
+                    await setDoc(progressRef, {
+                        status: 'in_progress',
+                        totalBatches,
+                        lastSuccessfulBatch: -1,
+                        startedAt: serverTimestamp(),
+                        doctorUID: user.uid
+                    });
                 }
             }
 
-            if (opCounter > 0) commitPromises.push(currentBatch.commit());
+            const commitBatchWithRetry = async (batch, batchIdx, maxRetries = 3) => {
+                for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                    try {
+                        await batch.commit();
+                        console.log(`✅ Batch ${batchIdx} committed on attempt ${attempt}`);
+                        return true;
+                    } catch (error) {
+                        console.warn(`⚠️ Batch ${batchIdx} failed (attempt ${attempt}):`, error);
+                        if (attempt === maxRetries) throw error;
+                        await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
+                    }
+                }
+            };
 
-
-            try {
-                await Promise.all(commitPromises);
-            } catch (batchError) {
-                console.error("Batch failed:", batchError);
-                showToast("⚠️ فشل في حفظ بعض البيانات، جاري إعادة المحاولة...", 4000, "#f59e0b");
-                await new Promise(r => setTimeout(r, 2000));
-                await Promise.all(commitPromises);
+            for (let i = lastCompletedBatch + 1; i < batches.length; i++) {
+                const { batch, index } = batches[i];
+                try {
+                    await commitBatchWithRetry(batch, index);
+                    await updateDoc(progressRef, {
+                        lastSuccessfulBatch: index,
+                        lastUpdate: serverTimestamp()
+                    });
+                } catch (error) {
+                    console.error(`❌ Batch ${index} failed permanently.`);
+                    await updateDoc(progressRef, {
+                        status: 'failed',
+                        failedBatch: index,
+                        error: error.message
+                    });
+                    throw new Error(`فشلت الدفعة ${index + 1} من ${totalBatches}. يرجى المحاولة لاحقاً.`);
+                }
             }
 
-            showToast(`✅ تم الحفظ وتحديث السجلات (${processedCount} طالب)`, 4000, "#10b981");
+            await updateDoc(progressRef, { status: 'completed', completedAt: serverTimestamp() });
+
+
+            const remainingParts = await getDocs(collection(db, "active_sessions", user.uid, "participants"));
+            if (!remainingParts.empty) {
+                console.warn(`⚠️ بقيت ${remainingParts.size} مشاركين، سيتم محاولة حذفهم مرة أخرى`);
+                const batch = writeBatch(db);
+                remainingParts.forEach(doc => batch.delete(doc.ref));
+                await batch.commit();
+            }
+
+            const attendedCount = attendedParticipants.length;
+            const absentCount = absentStudentsData.length;
+            showToast(`✅ تم الحفظ: ${attendedCount} حضور | ${absentCount} غياب`, 5000, "#10b981");
 
             setTimeout(() => location.reload(), 1500);
 
         } catch (e) {
             console.error("Save Error:", e);
-            showToast("خطأ في الحفظ: " + e.message, 4000, "#ef4444");
+            if (e.code === 'permission-denied') {
+                showToast("🚫 مشكلة في الصلاحيات، تأكد من قواعد Firestore: يجب السماح للدكتور بالكتابة في /active_sessions/{uid}/participants و close_progress", 7000, "#ef4444");
+            } else {
+                showToast("خطأ في الحفظ: " + e.message, 4000, "#ef4444");
+            }
             if (actionBtn) {
                 actionBtn.innerHTML = (lang === 'ar') ? "إعادة المحاولة" : "Retry";
                 actionBtn.style.pointerEvents = 'auto';
@@ -623,6 +621,7 @@ window.closeSessionImmediately = function () {
         }
     });
 };
+
 
 window.performSessionPause = async function () {
     const user = auth.currentUser;

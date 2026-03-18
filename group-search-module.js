@@ -30,9 +30,7 @@
         return new RegExp(`^\\d${L}\\d{1,3}( GP)?$`, 'i');
     };
 
-    // ================================================================
-    // CSS
-    // ================================================================
+    
     const injectCSS = () => {
         if (document.getElementById('groupSearchCSS')) return;
         const style = document.createElement('style');
@@ -170,9 +168,7 @@
         document.head.appendChild(style);
     };
 
-    // ================================================================
-    // HTML
-    // ================================================================
+   
     const fmtDate  = (iso) => { const [y,m,d] = iso.split('-'); return `${d}/${m}/${y}`; };
     const todayStr = () => { const n=new Date(); return `${String(n.getDate()).padStart(2,'0')}/${String(n.getMonth()+1).padStart(2,'0')}/${n.getFullYear()}`; };
     const todayISO = () => { const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`; };
@@ -226,9 +222,7 @@
         </div>
     `;
 
-    // ================================================================
-    // Group Search — Render Helpers
-    // ================================================================
+   
     const showSkeleton = (container) => {
         container.style.display = 'flex';
         container.innerHTML = `<div style="padding:16px 0 8px;">${Array(5).fill('<div class="gs-skeleton-row"></div>').join('')}</div>`;
@@ -359,9 +353,6 @@
         setTimeout(()=>{ container.querySelectorAll('.gs-percent-bar-fill').forEach(b=>b.style.width=pct+'%'); },50);
     };
 
-    // ================================================================
-    // Group Search — performSearch
-    // ================================================================
     const performSearch = async () => {
         const input     = document.getElementById('groupCodeInput');
         const dateInput = document.getElementById('groupSearchDate');
@@ -419,7 +410,7 @@
             const subjectsMap = {};
             attSnap.forEach(d => {
                 const data = d.data();
-                if (data.status === 'ABSENT') return; // تجاهل الغائبين
+                if (data.status === 'ABSENT') return; 
                 const sid  = String(data.id||'').trim();
                 const subj = (data.subject||'—').trim();
                 const doctor = data.doctorName||'—';
@@ -494,9 +485,7 @@
         window._gsLastData._activeSubject = null;
     };
 
-    // ================================================================
-    // Subject Search
-    // ================================================================
+    
     window._gsToggleSubjectSearch = async () => {
         const panel = document.getElementById('subjectSearchPanel');
         const arrow = document.getElementById('subjectSearchArrow');
@@ -516,7 +505,6 @@
 
         const YEAR_LABELS = { first_year:'الفرقة الأولى', second_year:'الفرقة الثانية', third_year:'الفرقة الثالثة', fourth_year:'الفرقة الرابعة', fifth_year:'الفرقة الخامسة' };
 
-        // ✅ المصدر: كل مواد الكلية من COLLEGE_SUBJECTS في config
         const collegeData = window.COLLEGE_SUBJECTS?.[_doctorCollege];
 
         if (collegeData && Object.keys(collegeData).length) {
@@ -536,7 +524,6 @@
             return;
         }
 
-        // Fallback: لو COLLEGE_SUBJECTS مش متاح → Firestore
         listEl.innerHTML = `<div style="padding:14px;text-align:center;color:#94a3b8;font-size:12px;"><i class="fa-solid fa-circle-notch fa-spin" style="margin-bottom:8px;display:block;font-size:20px;color:#7c3aed;"></i>جاري تحميل المواد...</div>`;
         try {
             const { collection, query, where, getDocs } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
@@ -584,7 +571,6 @@
             const { collection, query, where, getDocs } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
             const db = window.db;
 
-            // ✅ الـ collection الصح هو 'attendance' مش 'attendance_PT'
             const attSnap = await getDocs(query(
                 collection(db,'attendance'),
                 where('subject','==',subjectName),
@@ -603,7 +589,6 @@
                 return;
             }
 
-            // تجميع حسب الدكتور
             const doctorsMap = new Map();
             attSnap.forEach(d => {
                 const data = d.data();
@@ -689,7 +674,6 @@
                 else masterMap.set(sid,{id:sid, name:rec.name||sid, status:'extra', rec});
             });
 
-            // ترتيب: مسجلين بالـ ID تصاعدي، إضافيين في الآخر
             const rows = [...masterMap.values()].sort((a,b) => {
                 const ae = a.status==='extra'?1:0, be = b.status==='extra'?1:0;
                 if (ae!==be) return ae-be;
@@ -822,9 +806,7 @@
         showToast?.('✅ تم التحميل بنجاح',3000,'#10b981');
     };
 
-    // ================================================================
-    // Group Search — Export
-    // ================================================================
+    
     const buildExportRows = (groupCode, targetDate, subjectFilter) => {
         const data = window._gsLastData;
         if (!data) return [];
@@ -886,9 +868,7 @@
         showToast?.('✅ تم تحميل CSV',2500,'#10b981');
     };
 
-    // ================================================================
-    // Init
-    // ================================================================
+    
     window.initGroupSearchModule = async () => {
         injectCSS();
         const target = document.getElementById('viewSubjects');

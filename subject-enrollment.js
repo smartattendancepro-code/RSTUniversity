@@ -3,13 +3,12 @@ import {
     collection, doc,
     getDoc, getDocs, addDoc, setDoc, deleteDoc,
     query, where, serverTimestamp,
-    onSnapshot   // ✅ مضاف
+    onSnapshot   
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const db = window.db;
 const auth = window.auth;
 
-// ✅ المستمع الحالي — بيتمسح لما المودال يتقفل
 let _activeListener = null;
 
 function _injectStyles() {
@@ -63,7 +62,6 @@ function _injectStyles() {
 }
 _injectStyles();
 
-// ✅ Cache الأدمن فقط (لا يتغير كثيراً)
 let _adminCache = undefined;
 let _adminCachePromise = null;
 
@@ -86,7 +84,6 @@ async function _isAdminDoctor(uid) {
     return _adminCachePromise;
 }
 
-// ✅ إيقاف المستمع القديم قبل فتح مستمع جديد
 function _detachListener() {
     if (_activeListener) {
         _activeListener();
@@ -133,7 +130,6 @@ window.openSubjectEnrollmentModal = async function () {
     }
 };
 
-// ✅ إغلاق المودال + إيقاف المستمع فوراً
 window.closeSubjectEnrollmentModal = function () {
     const modal = document.getElementById('subjectEnrollmentModal');
     if (modal) modal.style.display = 'none';
@@ -180,7 +176,6 @@ window.saveAndLoadCollege = async function () {
     }
 };
 
-// ✅ القلب الجديد — onSnapshot مع fallback تلقائي لـ getDocs
 async function _attachRealtimeListener(college, doctorUID, doctorName) {
     const container = document.getElementById('enrollmentListContainer');
     if (!container) return;
@@ -251,16 +246,14 @@ async function _attachRealtimeListener(college, doctorUID, doctorName) {
         firstLoad = false;
     }
 
-    // ✅ Fallback: getDocs عادي لو onSnapshot فشل
     async function _fallbackToDocs() {
-        if (listenerFailed) return; // منعمل fallback غير مرة
+        if (listenerFailed) return; 
         listenerFailed = true;
         console.warn("⚠️ onSnapshot فشل — جاري الرجوع لـ getDocs");
         try {
             const results = await Promise.all(queries.map(q => getDocs(q)));
             results.forEach((snap, idx) => snapshots.set(idx, snap.docs));
             _mergeAndRender();
-            // ✅ إشعار للمستخدم إن الوضع عادي لكن بدون real-time
             showToast?.("⚡ تم التحميل — التحديث اللحظي غير متاح حالياً", 3000, "#f59e0b");
         } catch (e) {
             console.error("Fallback getDocs فشل:", e);
@@ -268,21 +261,20 @@ async function _attachRealtimeListener(college, doctorUID, doctorName) {
         }
     }
 
-    // ✅ Timeout — لو onSnapshot ما ردش خلال 5 ثواني نعمل fallback
     const fallbackTimer = setTimeout(() => {
         if (firstLoad) _fallbackToDocs();
     }, 5000);
 
     const unsubscribers = queries.map((q, idx) =>
         onSnapshot(q, snap => {
-            clearTimeout(fallbackTimer); // ✅ نجح — نلغي الـ fallback timer
+            clearTimeout(fallbackTimer); 
             snapshots.set(idx, snap.docs);
             if (firstLoad && snapshots.size < queries.length) return;
             _mergeAndRender();
         }, err => {
             console.error("onSnapshot error:", err);
             clearTimeout(fallbackTimer);
-            _fallbackToDocs(); // ✅ فشل — fallback فوري
+            _fallbackToDocs(); 
         })
     );
 
@@ -311,7 +303,6 @@ function _paintList(container, college, doctorUID, enrolledMap, isAdmin) {
     }
 
     const parts = [
-        // ✅ مؤشر اللحظي في الأعلى
         `<div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
             <span class="en-live-badge"><span class="en-live-dot"></span> تحديث لحظي مفعّل</span>
         </div>`
@@ -403,7 +394,6 @@ window.handleSubjectExcelUpload = async function (input, subjectName) {
             await addDoc(collection(db, "subject_enrollments"), { ...payload, createdAt: serverTimestamp() });
         }
 
-        // ✅ onSnapshot هيحدث الواجهة تلقائياً — مفيش حاجة إضافية هنا
         showToast?.(`✅ تم رفع ${students.length} طالب بنجاح`, 3000, "#10b981");
         if (typeof playSuccess === "function") playSuccess();
         if (typeof clearTheoryAttendanceCache === "function") clearTheoryAttendanceCache();
@@ -452,7 +442,6 @@ window.handleAdminSharedExcelUpload = async function (input, subjectName) {
             await addDoc(collection(db, "subject_enrollments"), { ...payload, createdAt: serverTimestamp() });
         }
 
-        // ✅ onSnapshot هيحدث الواجهة تلقائياً عند كل الدكاترة فوراً
         showToast?.(`✅ تم رفع الشيت المشترك`, 3000, "#10b981");
         if (typeof playSuccess === "function") playSuccess();
     } catch (e) {
@@ -469,7 +458,6 @@ window.adminDeleteEnrollment = async function (docId, subjectName) {
 
     try {
         await deleteDoc(doc(db, "subject_enrollments", docId));
-        // ✅ onSnapshot هيشيل الكارت تلقائياً عند الكل
         showToast?.("🗑️ تم الحذف بنجاح", 2500, "#10b981");
     } catch (e) {
         showToast?.("❌ خطأ أثناء الحذف", 3000, "#ef4444");
