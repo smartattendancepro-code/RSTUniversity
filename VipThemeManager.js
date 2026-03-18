@@ -1,6 +1,6 @@
 export const VIP_DOCTORS_LIST = [
     "CkhLWJ9QVhZgkQsbF024tuxBVZB3",
-    "M106mqlI6yOYWYc85bQ2mQg87cQ2"
+    "M106mqlI6yOYWYc85bQ2mQg87cQ2",
     "UXz3lQTUsFM1K7LdidwzV3idI3p2"
 ];
 
