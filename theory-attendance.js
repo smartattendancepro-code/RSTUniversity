@@ -110,7 +110,7 @@ window.openTheoryAttendanceModal = async function () {
 
     const user = window.auth.currentUser;
     if (!user) {
-        modal.style.display = 'none'; 
+        modal.style.display = 'none';
         window.showToast?.('⚠️ Please log in first', 3000, '#f59e0b');
         return;
     }
@@ -159,7 +159,7 @@ window.generateTheoryReport = async function () {
         if (!window.auth || !window.db) {
             throw new Error('النظام قيد التهيئة، يرجى المحاولة بعد ثواني');
         }
-        const db = window.db; 
+        const db = window.db;
 
         const [ExcelJS, user] = await Promise.all([loadExcelJS(), window.auth.currentUser]);
         if (!user) throw new Error('Authentication lost');
@@ -224,7 +224,7 @@ window.generateTheoryReport = async function () {
         });
 
         const rows = Array.from(studentMap.values())
-            .sort((a, b) => a.name.localeCompare(b.name, 'en'))
+            .sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }))
             .map((r, i) => ({ no: i + 1, ...r }));
 
         let totalPresent = 0, totalAbsent = 0, totalExtra = 0;

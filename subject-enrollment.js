@@ -2,11 +2,15 @@ import { COLLEGE_SUBJECTS, COLLEGE_NAMES } from './config.js';
 import {
     collection, doc,
     getDoc, getDocs, addDoc, setDoc, deleteDoc,
-    query, where, serverTimestamp
+    query, where, serverTimestamp,
+    onSnapshot   // ✅ مضاف
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const db = window.db;
 const auth = window.auth;
+
+// ✅ المستمع الحالي — بيتمسح لما المودال يتقفل
+let _activeListener = null;
 
 function _injectStyles() {
     if (document.getElementById('enrollment-system-styles')) return;
@@ -38,20 +42,30 @@ function _injectStyles() {
         .en-student-row { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:12px 14px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; gap:10px; }
         .en-avatar { width:36px; height:36px; min-width:36px; background:linear-gradient(135deg,#7c3aed15,#6d28d915); border-radius:50%; display:flex; align-items:center; justify-content:center; color:#7c3aed; font-size:13px; font-weight:800; border:1px solid #7c3aed20; }
         .en-stat-box { background:#f8fafc; border-radius:10px; padding:10px 14px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; border:1px solid #e2e8f0; }
+
+        /* ✅ مؤشر التحديث اللحظي */
+        .en-live-badge {
+            display:inline-flex; align-items:center; gap:5px;
+            font-size:11px; font-weight:700; color:#10b981;
+            background:#ecfdf5; border:1px solid #a7f3d0;
+            border-radius:20px; padding:3px 10px;
+        }
+        .en-live-dot {
+            width:7px; height:7px; border-radius:50%;
+            background:#10b981; animation:en-pulse 1.4s infinite;
+        }
+        @keyframes en-pulse {
+            0%,100% { opacity:1; transform:scale(1); }
+            50% { opacity:0.4; transform:scale(0.7); }
+        }
     `;
     document.head.appendChild(style);
 }
 _injectStyles();
 
-const CACHE_TTL = 30_000;
-
+// ✅ Cache الأدمن فقط (لا يتغير كثيراً)
 let _adminCache = undefined;
-let _adminCachePromise = null; 
-let _enrollmentCache = null;
-
-function _invalidateCache() {
-    _enrollmentCache = null;
-}
+let _adminCachePromise = null;
 
 async function _isAdminDoctor(uid) {
     if (_adminCache !== undefined) return _adminCache;
@@ -67,11 +81,17 @@ async function _isAdminDoctor(uid) {
             _adminCache = false;
             return false;
         })
-        .finally(() => {
-            _adminCachePromise = null;
-        });
+        .finally(() => { _adminCachePromise = null; });
 
     return _adminCachePromise;
+}
+
+// ✅ إيقاف المستمع القديم قبل فتح مستمع جديد
+function _detachListener() {
+    if (_activeListener) {
+        _activeListener();
+        _activeListener = null;
+    }
 }
 
 window.openSubjectEnrollmentModal = async function () {
@@ -105,7 +125,7 @@ window.openSubjectEnrollmentModal = async function () {
             if (collegeSelectorSection) collegeSelectorSection.style.display = 'block';
             if (enrollmentListContainer) enrollmentListContainer.innerHTML = '';
         } else {
-            await _renderEnrollmentList(college, user.uid, fullName);
+            await _attachRealtimeListener(college, user.uid, fullName);
         }
     } catch (e) {
         console.error("openSubjectEnrollmentModal:", e);
@@ -113,10 +133,16 @@ window.openSubjectEnrollmentModal = async function () {
     }
 };
 
+// ✅ إغلاق المودال + إيقاف المستمع فوراً
+window.closeSubjectEnrollmentModal = function () {
+    const modal = document.getElementById('subjectEnrollmentModal');
+    if (modal) modal.style.display = 'none';
+    _detachListener();
+};
+
 window.closeEnrolledStudentsModal = function () {
     const modal = document.getElementById('enrolledStudentsViewModal');
     if (modal) modal.style.display = 'none';
-    
     window._enrolledStudentsCache = null;
     window._enrolledSubjectName = null;
 };
@@ -144,8 +170,7 @@ window.saveAndLoadCollege = async function () {
         const facSnap = await getDoc(doc(db, "faculty_members", user.uid));
         const doctorName = facSnap.exists() ? (facSnap.data().fullName || "") : "";
 
-        _invalidateCache();
-        await _renderEnrollmentList(college, user.uid, doctorName);
+        await _attachRealtimeListener(college, user.uid, doctorName);
         showToast?.("✅ تم حفظ الكلية بنجاح", 2000, "#10b981");
     } catch (e) {
         console.error("saveAndLoadCollege:", e);
@@ -155,7 +180,8 @@ window.saveAndLoadCollege = async function () {
     }
 };
 
-async function _renderEnrollmentList(college, doctorUID, doctorName) {
+// ✅ القلب الجديد — onSnapshot مع fallback تلقائي لـ getDocs
+async function _attachRealtimeListener(college, doctorUID, doctorName) {
     const container = document.getElementById('enrollmentListContainer');
     if (!container) return;
 
@@ -164,72 +190,117 @@ async function _renderEnrollmentList(college, doctorUID, doctorName) {
 
     container.innerHTML = _loadingHTML("جاري تحميل المواد...");
 
-    try {
-        const isAdmin = await _isAdminDoctor(doctorUID);
-        let enrolledMap;
-        const now = Date.now();
+    _detachListener();
 
-        if (_enrollmentCache && _enrollmentCache.college === college && now - _enrollmentCache.ts < CACHE_TTL) {
-            enrolledMap = _enrollmentCache.map;
-        } else {
-            enrolledMap = await _buildEnrolledMap(college, doctorUID, isAdmin);
-            _enrollmentCache = { college, map: enrolledMap, ts: now };
-        }
-
-        _paintList(container, college, doctorUID, enrolledMap, isAdmin);
-    } catch (e) {
-        console.error("_renderEnrollmentList:", e);
-        container.innerHTML = _errorHTML("خطأ في تحميل قائمة المواد");
-    }
-}
-
-async function _buildEnrolledMap(college, doctorUID, isAdmin) {
-    const enrolledMap = {};
+    const isAdmin = await _isAdminDoctor(doctorUID);
     const enrollmentsRef = collection(db, "subject_enrollments");
 
-    if (isAdmin) {
-        const snap = await getDocs(query(enrollmentsRef, where("college", "==", college)));
-        snap.forEach(d => {
-            const data = d.data();
-            const name = data.subjectName;
-            if (!name) return;
+    const queries = isAdmin
+        ? [query(enrollmentsRef, where("college", "==", college))]
+        : [
+            query(enrollmentsRef, where("doctorUID", "==", doctorUID)),
+            query(enrollmentsRef, where("sharedWithAll", "==", true), where("college", "==", college))
+        ];
 
-            const isOwnDoc = data.doctorUID === doctorUID;
-            if (!enrolledMap[name] || isOwnDoc) {
-                enrolledMap[name] = { 
-                    docId: d.id, 
-                    studentCount: data.studentCount || 0, 
-                    isShared: data.sharedWithAll === true, 
-                    ownerUID: data.doctorUID || "" 
-                };
-            }
-        });
-    } else {
-        const [ownSnap, sharedSnap] = await Promise.all([
-            getDocs(query(enrollmentsRef, where("doctorUID", "==", doctorUID))),
-            getDocs(query(enrollmentsRef, where("sharedWithAll", "==", true), where("college", "==", college)))
-        ]);
+    const snapshots = new Map();
+    let firstLoad = true;
+    let listenerFailed = false;
 
-        ownSnap.forEach(d => {
-            const data = d.data();
-            if (data.subjectName) {
-                enrolledMap[data.subjectName] = { docId: d.id, studentCount: data.studentCount || 0, isShared: false, ownerUID: doctorUID };
-            }
-        });
-
-        sharedSnap.forEach(d => {
-            const data = d.data();
-            if (data.subjectName && !enrolledMap[data.subjectName]) {
-                enrolledMap[data.subjectName] = { docId: d.id, studentCount: data.studentCount || 0, isShared: true, ownerUID: data.doctorUID || "" };
-            }
-        });
+    function _buildEnrolledMap() {
+        const enrolledMap = {};
+        if (isAdmin) {
+            (snapshots.get(0) || []).forEach(d => {
+                const data = d.data();
+                const name = data.subjectName;
+                if (!name) return;
+                if (!enrolledMap[name] || data.doctorUID === doctorUID) {
+                    enrolledMap[name] = {
+                        docId: d.id,
+                        studentCount: data.studentCount || 0,
+                        isShared: data.sharedWithAll === true,
+                        ownerUID: data.doctorUID || ""
+                    };
+                }
+            });
+        } else {
+            (snapshots.get(0) || []).forEach(d => {
+                const data = d.data();
+                if (data.subjectName) {
+                    enrolledMap[data.subjectName] = {
+                        docId: d.id, studentCount: data.studentCount || 0,
+                        isShared: false, ownerUID: doctorUID
+                    };
+                }
+            });
+            (snapshots.get(1) || []).forEach(d => {
+                const data = d.data();
+                if (data.subjectName && !enrolledMap[data.subjectName]) {
+                    enrolledMap[data.subjectName] = {
+                        docId: d.id, studentCount: data.studentCount || 0,
+                        isShared: true, ownerUID: data.doctorUID || ""
+                    };
+                }
+            });
+        }
+        return enrolledMap;
     }
-    return enrolledMap;
+
+    function _mergeAndRender() {
+        _paintList(container, college, doctorUID, _buildEnrolledMap(), isAdmin);
+        if (!firstLoad) showToast?.("🔄 تم تحديث القائمة تلقائياً", 1500, "#7c3aed");
+        firstLoad = false;
+    }
+
+    // ✅ Fallback: getDocs عادي لو onSnapshot فشل
+    async function _fallbackToDocs() {
+        if (listenerFailed) return; // منعمل fallback غير مرة
+        listenerFailed = true;
+        console.warn("⚠️ onSnapshot فشل — جاري الرجوع لـ getDocs");
+        try {
+            const results = await Promise.all(queries.map(q => getDocs(q)));
+            results.forEach((snap, idx) => snapshots.set(idx, snap.docs));
+            _mergeAndRender();
+            // ✅ إشعار للمستخدم إن الوضع عادي لكن بدون real-time
+            showToast?.("⚡ تم التحميل — التحديث اللحظي غير متاح حالياً", 3000, "#f59e0b");
+        } catch (e) {
+            console.error("Fallback getDocs فشل:", e);
+            container.innerHTML = _errorHTML("خطأ في تحميل البيانات");
+        }
+    }
+
+    // ✅ Timeout — لو onSnapshot ما ردش خلال 5 ثواني نعمل fallback
+    const fallbackTimer = setTimeout(() => {
+        if (firstLoad) _fallbackToDocs();
+    }, 5000);
+
+    const unsubscribers = queries.map((q, idx) =>
+        onSnapshot(q, snap => {
+            clearTimeout(fallbackTimer); // ✅ نجح — نلغي الـ fallback timer
+            snapshots.set(idx, snap.docs);
+            if (firstLoad && snapshots.size < queries.length) return;
+            _mergeAndRender();
+        }, err => {
+            console.error("onSnapshot error:", err);
+            clearTimeout(fallbackTimer);
+            _fallbackToDocs(); // ✅ فشل — fallback فوري
+        })
+    );
+
+    _activeListener = () => {
+        clearTimeout(fallbackTimer);
+        unsubscribers.forEach(fn => fn());
+    };
 }
 
 function _paintList(container, college, doctorUID, enrolledMap, isAdmin) {
     const collegeSubjectsData = COLLEGE_SUBJECTS[college] || {};
-    const YEAR_LABELS = { first_year: "الفرقة الأولى", second_year: "الفرقة الثانية", third_year: "الفرقة الثالثة", fourth_year: "الفرقة الرابعة", fifth_year: "الفرقة الخامسة" };
+    const YEAR_LABELS = {
+        first_year: "الفرقة الأولى",
+        second_year: "الفرقة الثانية",
+        third_year: "الفرقة الثالثة",
+        fourth_year: "الفرقة الرابعة",
+        fifth_year: "الفرقة الخامسة"
+    };
 
     const allSubjects = Object.entries(collegeSubjectsData)
         .flatMap(([yearKey, subjects]) => subjects.map(name => ({ name, year: yearKey })));
@@ -239,7 +310,13 @@ function _paintList(container, college, doctorUID, enrolledMap, isAdmin) {
         return;
     }
 
-    const parts =[];
+    const parts = [
+        // ✅ مؤشر اللحظي في الأعلى
+        `<div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
+            <span class="en-live-badge"><span class="en-live-dot"></span> تحديث لحظي مفعّل</span>
+        </div>`
+    ];
+
     let lastYear = '';
 
     for (const { name: subjectName, year: yearKey } of allSubjects) {
@@ -299,8 +376,7 @@ window.handleSubjectExcelUpload = async function (input, subjectName) {
     if (!user) return showToast?.("⚠️ يجب تسجيل الدخول أولاً", 3000, "#f59e0b");
 
     showToast?.("⏳ جاري قراءة الملف...", 2000, "#7c3aed");
-
-    await new Promise(r => setTimeout(r, 100)); 
+    await new Promise(r => setTimeout(r, 100));
 
     try {
         const students = await _parseExcel(file);
@@ -311,10 +387,15 @@ window.handleSubjectExcelUpload = async function (input, subjectName) {
         const facSnap = await getDoc(doc(db, "faculty_members", user.uid));
         const { fullName: doctorName = "", college = "" } = facSnap.exists() ? facSnap.data() : {};
 
-        const q = query(collection(db, "subject_enrollments"), where("doctorUID", "==", user.uid), where("subjectName", "==", subjectName));
+        const q = query(collection(db, "subject_enrollments"),
+            where("doctorUID", "==", user.uid),
+            where("subjectName", "==", subjectName));
         const existingSnap = await getDocs(q);
 
-        const payload = { doctorUID: user.uid, doctorName, college, subjectName, students, studentCount: students.length, updatedAt: serverTimestamp() };
+        const payload = {
+            doctorUID: user.uid, doctorName, college, subjectName,
+            students, studentCount: students.length, updatedAt: serverTimestamp()
+        };
 
         if (!existingSnap.empty) {
             await setDoc(doc(db, "subject_enrollments", existingSnap.docs[0].id), payload, { merge: true });
@@ -322,12 +403,10 @@ window.handleSubjectExcelUpload = async function (input, subjectName) {
             await addDoc(collection(db, "subject_enrollments"), { ...payload, createdAt: serverTimestamp() });
         }
 
+        // ✅ onSnapshot هيحدث الواجهة تلقائياً — مفيش حاجة إضافية هنا
         showToast?.(`✅ تم رفع ${students.length} طالب بنجاح`, 3000, "#10b981");
         if (typeof playSuccess === "function") playSuccess();
         if (typeof clearTheoryAttendanceCache === "function") clearTheoryAttendanceCache();
-        
-        _invalidateCache();
-        await _renderEnrollmentList(college, user.uid, doctorName);
     } catch (e) {
         console.error("Upload Error:", e);
         showToast?.(e.message === "SheetJS missing" ? "❌ مكتبة الإكسل غير موجودة" : "❌ خطأ أثناء رفع الملف", 3000, "#ef4444");
@@ -344,7 +423,7 @@ window.handleAdminSharedExcelUpload = async function (input, subjectName) {
     if (!(await _isAdminDoctor(user.uid))) return showToast?.("❌ هذه الميزة للأدمن فقط", 3000, "#ef4444");
 
     showToast?.("⏳ جاري قراءة الملف...", 2000, "#7c3aed");
-    await new Promise(r => setTimeout(r, 100)); 
+    await new Promise(r => setTimeout(r, 100));
 
     try {
         const students = await _parseExcel(file);
@@ -355,10 +434,17 @@ window.handleAdminSharedExcelUpload = async function (input, subjectName) {
         const facSnap = await getDoc(doc(db, "faculty_members", user.uid));
         const { fullName = "", college = "" } = facSnap.exists() ? facSnap.data() : {};
 
-        const q = query(collection(db, "subject_enrollments"), where("sharedWithAll", "==", true), where("subjectName", "==", subjectName), where("college", "==", college));
+        const q = query(collection(db, "subject_enrollments"),
+            where("sharedWithAll", "==", true),
+            where("subjectName", "==", subjectName),
+            where("college", "==", college));
         const existingSnap = await getDocs(q);
 
-        const payload = { doctorUID: user.uid, doctorName: fullName, college, subjectName, students, studentCount: students.length, sharedWithAll: true, updatedAt: serverTimestamp() };
+        const payload = {
+            doctorUID: user.uid, doctorName: fullName, college, subjectName,
+            students, studentCount: students.length, sharedWithAll: true,
+            updatedAt: serverTimestamp()
+        };
 
         if (!existingSnap.empty) {
             await setDoc(doc(db, "subject_enrollments", existingSnap.docs[0].id), payload, { merge: true });
@@ -366,11 +452,9 @@ window.handleAdminSharedExcelUpload = async function (input, subjectName) {
             await addDoc(collection(db, "subject_enrollments"), { ...payload, createdAt: serverTimestamp() });
         }
 
+        // ✅ onSnapshot هيحدث الواجهة تلقائياً عند كل الدكاترة فوراً
         showToast?.(`✅ تم رفع الشيت المشترك`, 3000, "#10b981");
         if (typeof playSuccess === "function") playSuccess();
-        
-        _invalidateCache();
-        await _renderEnrollmentList(college, user.uid, fullName);
     } catch (e) {
         showToast?.("❌ خطأ أثناء الرفع", 3000, "#ef4444");
     } finally { input.value = ''; }
@@ -385,12 +469,8 @@ window.adminDeleteEnrollment = async function (docId, subjectName) {
 
     try {
         await deleteDoc(doc(db, "subject_enrollments", docId));
+        // ✅ onSnapshot هيشيل الكارت تلقائياً عند الكل
         showToast?.("🗑️ تم الحذف بنجاح", 2500, "#10b981");
-        
-        _invalidateCache();
-        const facSnap = await getDoc(doc(db, "faculty_members", user.uid));
-        const { college = "", fullName = "" } = facSnap.exists() ? facSnap.data() : {};
-        await _renderEnrollmentList(college, user.uid, fullName);
     } catch (e) {
         showToast?.("❌ خطأ أثناء الحذف", 3000, "#ef4444");
     }
@@ -411,10 +491,13 @@ window.viewEnrolledStudents = async function (subjectName, docId) {
 
     try {
         const docSnap = await getDoc(doc(db, "subject_enrollments", docId));
-        if (!docSnap.exists()) { listEl && (listEl.innerHTML = `<div class="en-empty">لا توجد بيانات</div>`); return; }
+        if (!docSnap.exists()) {
+            listEl && (listEl.innerHTML = `<div class="en-empty">لا توجد بيانات</div>`);
+            return;
+        }
 
-        const students = docSnap.data().students ||[];
-        window._enrolledStudentsCache = students; 
+        const students = docSnap.data().students || [];
+        window._enrolledStudentsCache = students;
         _renderEnrolledList(students);
     } catch (e) {
         if (listEl) listEl.innerHTML = _errorHTML("خطأ في التحميل");
@@ -459,17 +542,16 @@ function _renderEnrolledList(students) {
 
 async function _parseExcel(file) {
     if (typeof XLSX === 'undefined') throw new Error("SheetJS missing");
-
     try {
         const data = await _readExcelFile(file);
         if (!data?.length) { showToast?.("❌ الملف فارغ", 3000, "#ef4444"); return null; }
 
         const students = data.slice(1)
             .filter(r => r[0] && r[1])
-            .map(r => ({ 
-                id: String(r[0]).trim(), 
-                name: String(r[1]).trim(), 
-                group: r[2] ? String(r[2]).trim() : "" 
+            .map(r => ({
+                id: String(r[0]).trim(),
+                name: String(r[1]).trim(),
+                group: r[2] ? String(r[2]).trim() : ""
             }));
 
         if (!students.length) { showToast?.("❌ بيانات غير صالحة", 3000, "#ef4444"); return null; }
@@ -504,4 +586,4 @@ function _errorHTML(msg) {
     return `<div class="en-error"><i class="fa-solid fa-triangle-exclamation" style="font-size:30px;margin-bottom:10px;display:block;"></i>${msg}</div>`;
 }
 
-console.log("✅ Subject Enrollment System Loaded (100% Pro - Refactored)");
+console.log("✅ Subject Enrollment System Loaded — Real-time onSnapshot Active");

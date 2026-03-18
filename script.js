@@ -1,4 +1,5 @@
-import { getHallsByCollege, getAllSubjectsByCollege, getSubjectsByCollegeAndLevel } from './config.js';
+import { getHallsByCollege, getAllSubjectsByCollege, getSubjectsByCollegeAndLevel, COLLEGE_SUBJECTS } from './config.js';
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import {
     getFirestore,
@@ -34,6 +35,8 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { i18n, t, changeLanguage, toggleSystemLanguage } from './i18n.js';
 import { AuditManager } from './AuditManager.js';
+window.COLLEGE_SUBJECTS = COLLEGE_SUBJECTS;
+
 
 window.HARDWARE_ID = null;
 const DEVICE_CACHE_KEY = "nursing_secure_device_v4";
@@ -7433,7 +7436,6 @@ window.downloadSimpleSheet = function (subjectName) {
     performNetworkDiagnostic();
 
 })();
-
 window.openSubjectEnrollmentSecurely = async function () {
     const lang = localStorage.getItem('sys_lang') || 'ar';
 
@@ -7450,7 +7452,6 @@ window.openSubjectEnrollmentSecurely = async function () {
     if (document.getElementById(modalId)) return;
 
     const modalHTML = `
-        <!-- تم تعديل z-index إلى 2147483647 لتكون دائماً في المقدمة -->
         <div id="${modalId}" style="position:fixed; inset:0; background:rgba(15,23,42,0.7); backdrop-filter:blur(8px); z-index:2147483647; display:flex; align-items:center; justify-content:center; animation: fadeIn 0.3s ease;">
             <div style="background:#fff; width:90%; max-width:340px; border-radius:24px; padding:30px; text-align:center; box-shadow:0 25px 50px -12px rgba(0,0,0,0.5); transform: scale(1); animation: scaleIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);">
                 <div style="width:60px; height:60px; background:#f5f3ff; color:#7c3aed; border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 auto 20px; border:2px solid #ddd6fe;">
@@ -7458,12 +7459,9 @@ window.openSubjectEnrollmentSecurely = async function () {
                 </div>
                 <h3 style="margin:0 0 10px; font-size:18px; font-weight:900; color:#1e293b;">${lang === 'ar' ? 'منطقة محميّة' : 'Protected Area'}</h3>
                 <p style="margin:0 0 20px; font-size:13px; color:#64748b;">${lang === 'ar' ? 'برجاء إدخال الكود السري للمتابعة' : 'Please enter secret code'}</p>
-                
-                <!-- تم إضافة autocomplete و readonly لمنع الملء التلقائي للمتصفح -->
-                <input type="password" id="secretPassInput" placeholder="••••••••" 
+                <input type="password" id="secretPassInput" placeholder="••••••••"
                        autocomplete="new-password" readonly onfocus="this.removeAttribute('readonly');" data-lpignore="true"
                        style="width:100%; padding:12px; border-radius:12px; border:2px solid #e2e8f0; text-align:center; font-size:18px; outline:none; transition:0.2s; margin-bottom:20px;">
-                
                 <div style="display:flex; gap:10px;">
                     <button id="cancelPassBtn" style="flex:1; padding:12px; border-radius:12px; border:none; background:#f1f5f9; color:#64748b; font-weight:700; cursor:pointer;">${lang === 'ar' ? 'إلغاء' : 'Cancel'}</button>
                     <button id="confirmPassBtn" style="flex:1; padding:12px; border-radius:12px; border:none; background:linear-gradient(135deg, #7c3aed, #6d28d9); color:#fff; font-weight:700; cursor:pointer;">${lang === 'ar' ? 'دخول' : 'Enter'}</button>
@@ -7479,14 +7477,24 @@ window.openSubjectEnrollmentSecurely = async function () {
 
     document.body.insertAdjacentHTML('beforeend', modalHTML);
     const input = document.getElementById('secretPassInput');
+    const closeModal = () => document.getElementById(modalId)?.remove();
 
-    setTimeout(() => {
-        input.focus();
-    }, 100);
-
-    const closeModal = () => document.getElementById(modalId).remove();
-
+    setTimeout(() => input.focus(), 100);
     document.getElementById('cancelPassBtn').onclick = closeModal;
+
+    // ✅ جلب الكود في الخلفية فوراً لما المودال يفتح — مش هيستنى المستخدم
+    let _cachedCode = sessionStorage.getItem("_sec_code_cache") || null;
+
+    if (!_cachedCode) {
+        getDoc(doc(db, "app_settings", "security"))
+            .then(snap => {
+                if (snap.exists()) {
+                    _cachedCode = snap.data().registration_code;
+                    sessionStorage.setItem("_sec_code_cache", _cachedCode);
+                }
+            })
+            .catch(e => console.warn("Prefetch failed:", e));
+    }
 
     document.getElementById('confirmPassBtn').onclick = async function () {
         const userCode = input.value.trim();
@@ -7496,23 +7504,28 @@ window.openSubjectEnrollmentSecurely = async function () {
         this.style.pointerEvents = 'none';
 
         try {
-            const secretRef = doc(db, "app_settings", "security");
-            const secretSnap = await getDoc(secretRef);
+            
+            let correctCode = _cachedCode;
 
-            if (secretSnap.exists()) {
-                const correctCode = secretSnap.data().registration_code;
-
-                if (userCode === correctCode) {
-                    closeModal();
-                    if (typeof openSubjectEnrollmentModal === "function") openSubjectEnrollmentModal();
-                    else document.getElementById('subjectEnrollmentModal').style.display = 'flex';
-                } else {
-                    alert(lang === 'ar' ? 'الكود خطأ ❌' : 'Invalid Code ❌');
-                    this.innerHTML = lang === 'ar' ? 'دخول' : 'Enter';
-                    this.style.pointerEvents = 'auto';
-                    input.value = "";
-                    input.focus();
+            if (!correctCode) {
+                const snap = await getDoc(doc(db, "app_settings", "security"));
+                if (snap.exists()) {
+                    correctCode = snap.data().registration_code;
+                    _cachedCode = correctCode;
+                    sessionStorage.setItem("_sec_code_cache", correctCode);
                 }
+            }
+
+            if (userCode === correctCode) {
+                closeModal();
+                if (typeof openSubjectEnrollmentModal === "function") openSubjectEnrollmentModal();
+                else document.getElementById('subjectEnrollmentModal').style.display = 'flex';
+            } else {
+                alert(lang === 'ar' ? 'الكود خطأ ❌' : 'Invalid Code ❌');
+                this.innerHTML = lang === 'ar' ? 'دخول' : 'Enter';
+                this.style.pointerEvents = 'auto';
+                input.value = "";
+                input.focus();
             }
         } catch (e) {
             console.error(e);
@@ -7521,6 +7534,6 @@ window.openSubjectEnrollmentSecurely = async function () {
     };
 
     input.addEventListener("keyup", (e) => {
-        if (e.key === "Enter") document.getElementById('confirmPassBtn').click();
+        if (e.key === "Enter") document.getElementById('confirmPassBtn')?.click();
     });
 };

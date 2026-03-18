@@ -474,6 +474,17 @@
                                     </div>
                                 </button>
 
+                                <button id="farBtn" onclick="openFARSystem()" class="dean-btn-modern far-style"
+                                    style="display:none;">
+                                    <div class="dean-icon-box">
+                                        <i class="fa-solid fa-user-secret fa-fade"></i>
+                                    </div>
+                                    <div class="dean-btn-text">
+                                        <span class="main-text">الاستخبارات</span>
+                                        <span class="sub-text">كشف الغش — FAR</span>
+                                    </div>
+                                </button>
+
                             </div>
                         </div>
 
@@ -934,7 +945,8 @@
             <script type="module" src="js/core/utils.js"></script>
             <script type="module" src="./setup.js"></script>
             <script type="module" src="security.js"></script>
-            <script type="module" src="script.js?v=1.0"></script>
+            <script type="module" src="script.js"></script>
+            <script type="module" src="far-system.js?v=99"></script>
             <script type="module" src="admin-session.js"></script>
             <script type="module" src="face-system.js"></script>
             <script type="module" src="profile-system.js"></script>
@@ -1445,13 +1457,14 @@
                                 data-i18n="stat_attendance">Attendance</div>
                         </div>
                         <div style="width: 1px; background: #e2e8f0;"></div>
-                        <div style="text-align: center;">
-                            <div style="color: #ef4444; font-size: 18px; margin-bottom: 4px;"><i
-                                    class="fa-solid fa-calendar-xmark"></i></div>
-                            <div id="profAbsenceVal"
-                                style="font-size: 18px; font-weight: 800; color: #0f172a; line-height: 1;">--</div>
-                            <div style="font-size: 10px; color: #94a3b8; font-weight: bold; margin-top: 4px;"
-                                data-i18n="stat_absence">Absence</div>
+                        <div style="text-align: center;"><button onclick="openDeanSettings()"
+                                class="dean-btn-modern settings-style">
+                                <div style="color: #ef4444; font-size: 18px; margin-bottom: 4px;"><i
+                                        class="fa-solid fa-calendar-xmark"></i></div>
+                                <div id="profAbsenceVal"
+                                    style="font-size: 18px; font-weight: 800; color: #0f172a; line-height: 1;">--</div>
+                                <div style="font-size: 10px; color: #94a3b8; font-weight: bold; margin-top: 4px;"
+                                    data-i18n="stat_absence">Absence</div>
                         </div>
                         <div style="width: 1px; background: #e2e8f0;"></div>
                         <div style="text-align: center;">
@@ -1462,6 +1475,14 @@
                             <div style="font-size: 10px; color: #94a3b8; font-weight: bold; margin-top: 4px;"
                                 data-i18n="stat_discipline">Discipline</div>
                         </div>
+                    </div>
+
+                    <div style="padding: 10px 20px 0 20px;">
+                        <button onclick="openAcademicRecord()"
+                            style="width: 100%; padding: 12px; background: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; border-radius: 12px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: 0.2s;">
+                            <i class="fa-solid fa-graduation-cap"></i>
+                            <span data-i18n="academic_record_title">Academic Record</span>
+                        </button>
                     </div>
 
                     <div
@@ -1574,6 +1595,365 @@
                 </div>
             </div>
             <style>
+                .dean-btn-modern.far-style {
+                    background: linear-gradient(135deg, #0a0c0f, #1e2530);
+                    border: 1px solid #e8c84a;
+                    color: #e8c84a;
+                }
+
+                .dean-btn-modern.far-style .dean-icon-box {
+                    background: rgba(232, 200, 74, .15);
+                    color: #e8c84a;
+                }
+
+                #farModal {
+                    position: fixed;
+                    inset: 0;
+                    background: rgba(0, 0, 0, .85);
+                    backdrop-filter: blur(8px);
+                    z-index: 2147483647;
+                    display: none;
+                    align-items: flex-start;
+                    justify-content: center;
+                    overflow-y: auto;
+                    padding: 20px 10px 40px;
+                }
+
+                .far-box {
+                    background: #0a0c0f;
+                    border: 1px solid #1e2530;
+                    border-radius: 12px;
+                    width: 100%;
+                    max-width: 700px;
+                }
+
+                .far-topbar {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    padding: 14px 20px;
+                    background: #0f1318;
+                    border-bottom: 1px solid #1e2530;
+                }
+
+                .far-brand {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                }
+
+                .far-badge-top {
+                    background: #e84a4a;
+                    color: #fff;
+                    font-size: 10px;
+                    font-weight: 700;
+                    letter-spacing: 2px;
+                    padding: 3px 8px;
+                    border-radius: 3px;
+                }
+
+                .far-brand-title {
+                    color: #e8f0f8;
+                    font-size: 14px;
+                    font-weight: 700;
+                }
+
+                .far-close-btn {
+                    background: none;
+                    border: none;
+                    color: #6a7a8a;
+                    font-size: 20px;
+                    cursor: pointer;
+                    padding: 4px 8px;
+                    border-radius: 6px;
+                }
+
+                .far-body {
+                    padding: 20px;
+                }
+
+                .far-log {
+                    background: #0f1318;
+                    border: 1px solid #1e2530;
+                    border-radius: 6px;
+                    padding: 12px 16px;
+                    font-family: monospace;
+                    font-size: 11px;
+                    color: #6a7a8a;
+                    line-height: 2;
+                    max-height: 120px;
+                    overflow-y: auto;
+                    white-space: pre-wrap;
+                    margin-bottom: 16px;
+                }
+
+                #farStats {
+                    display: none;
+                    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+                    gap: 10px;
+                    margin-bottom: 20px;
+                }
+
+                .far-stat {
+                    background: #0f1318;
+                    border: 1px solid #1e2530;
+                    border-radius: 6px;
+                    padding: 12px 14px;
+                    position: relative;
+                    overflow: hidden;
+                }
+
+                .far-stat::before {
+                    content: '';
+                    position: absolute;
+                    top: 0;
+                    right: 0;
+                    width: 3px;
+                    height: 100%;
+                }
+
+                .far-stat.accent::before {
+                    background: #e8c84a;
+                }
+
+                .far-stat.danger::before {
+                    background: #e84a4a;
+                }
+
+                .far-stat.medium::before {
+                    background: #e8944a;
+                }
+
+                .far-stat.ok::before {
+                    background: #4ae8a0;
+                }
+
+                .far-stat-label {
+                    font-size: 10px;
+                    color: #6a7a8a;
+                    text-transform: uppercase;
+                    margin-bottom: 6px;
+                }
+
+                .far-stat-val {
+                    font-size: 26px;
+                    font-weight: 700;
+                    color: #e8f0f8;
+                    line-height: 1;
+                }
+
+                .far-stat.danger .far-stat-val {
+                    color: #e84a4a;
+                }
+
+                .far-stat.medium .far-stat-val {
+                    color: #e8944a;
+                }
+
+                .far-stat.ok .far-stat-val {
+                    color: #4ae8a0;
+                }
+
+                .far-stat.accent .far-stat-val {
+                    color: #e8c84a;
+                }
+
+                .far-section-header {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    margin-bottom: 12px;
+                }
+
+                .far-dot {
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 50%;
+                }
+
+                .danger-dot {
+                    background: #e84a4a;
+                    box-shadow: 0 0 6px #e84a4a;
+                }
+
+                .ok-dot {
+                    background: #4ae8a0;
+                    box-shadow: 0 0 6px #4ae8a0;
+                }
+
+                .far-section-title {
+                    font-size: 12px;
+                    font-weight: 700;
+                    color: #e8f0f8;
+                    letter-spacing: 2px;
+                    text-transform: uppercase;
+                }
+
+                .far-badge {
+                    background: #141920;
+                    color: #6a7a8a;
+                    font-size: 11px;
+                    padding: 2px 8px;
+                    border-radius: 100px;
+                }
+
+                .far-card {
+                    background: #0f1318;
+                    border: 1px solid #1e2530;
+                    border-radius: 6px;
+                    margin-bottom: 10px;
+                    overflow: hidden;
+                }
+
+                .far-card.card-high {
+                    border-right: 3px solid #e84a4a;
+                }
+
+                .far-card.card-medium {
+                    border-right: 3px solid #e8944a;
+                }
+
+                .far-card-header {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    padding: 12px 16px;
+                    background: #141920;
+                    cursor: pointer;
+                    user-select: none;
+                }
+
+                .far-fp {
+                    font-size: 10px;
+                    color: #6a7a8a;
+                    font-family: monospace;
+                }
+
+                .far-count {
+                    font-size: 11px;
+                    color: #6a7a8a;
+                    margin-right: 10px;
+                }
+
+                .far-risk-badge {
+                    font-size: 9px;
+                    font-weight: 700;
+                    letter-spacing: 2px;
+                    padding: 3px 8px;
+                    border-radius: 3px;
+                }
+
+                .badge-high {
+                    background: rgba(232, 74, 74, .15);
+                    color: #e84a4a;
+                    border: 1px solid #e84a4a;
+                }
+
+                .badge-medium {
+                    background: rgba(232, 148, 74, .15);
+                    color: #e8944a;
+                    border: 1px solid #e8944a;
+                }
+
+                .badge-ok {
+                    background: rgba(74, 232, 160, .15);
+                    color: #4ae8a0;
+                    border: 1px solid #4ae8a0;
+                }
+
+                .far-card-body {
+                    padding: 14px 16px;
+                    display: none;
+                    flex-direction: column;
+                    gap: 10px;
+                }
+
+                .far-card-body.open {
+                    display: flex;
+                }
+
+                .far-line {
+                    background: #0a0c0f;
+                    border: 1px solid #1e2530;
+                    border-radius: 6px;
+                    padding: 12px 14px;
+                }
+
+                .far-line-summary {
+                    font-size: 13px;
+                    line-height: 1.7;
+                    color: #e8f0f8;
+                    margin-bottom: 10px;
+                }
+
+                .far-line-meta {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 10px;
+                    font-size: 11px;
+                    color: #6a7a8a;
+                    margin-bottom: 8px;
+                }
+
+                .far-ip-row {
+                    font-size: 11px;
+                    font-family: monospace;
+                    padding: 8px 12px;
+                    border-radius: 4px;
+                }
+
+                .ip-match {
+                    background: rgba(232, 74, 74, .1);
+                    color: #e84a4a;
+                }
+
+                .ip-diff {
+                    background: rgba(232, 148, 74, .1);
+                    color: #e8944a;
+                }
+
+                .far-clean-card {
+                    background: #0f1318;
+                    border: 1px solid #1e2530;
+                    border-right: 3px solid #4ae8a0;
+                    border-radius: 6px;
+                    padding: 10px 16px;
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    margin-bottom: 8px;
+                }
+
+                .far-clean-name {
+                    color: #e8f0f8;
+                    font-weight: 600;
+                    font-size: 13px;
+                    flex: 1;
+                }
+
+                .far-clean-id {
+                    font-size: 11px;
+                    color: #6a7a8a;
+                    font-family: monospace;
+                }
+
+                .far-scan-btn {
+                    background: #e8c84a;
+                    color: #0a0c0f;
+                    border: none;
+                    border-radius: 6px;
+                    font-weight: 700;
+                    font-size: 13px;
+                    padding: 10px 24px;
+                    cursor: pointer;
+                    margin-bottom: 16px;
+                }
+
+                .far-scan-btn:disabled {
+                    opacity: .4;
+                    cursor: not-allowed;
+                }
+
                 #facultyProfileBtn {
                     background: none !important;
                     border: none !important;
@@ -3572,10 +3952,91 @@
 <script type="module" src="advanced-archivee.js"></script>
 
 
+<!-- Academic Record Modal -->
+<div id="academicRecordModal" class="modal-overlay" style="z-index: 2147483647; display: none;">
+    <div class="modal-box" style="max-width: 380px; padding: 0; border-radius: 20px; overflow: hidden;">
 
+        <!-- Header -->
+        <div
+            style="background: linear-gradient(135deg, #0ea5e9, #3b82f6); padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <h3 style="margin: 0; font-size: 16px; font-weight: 900;" data-i18n="academic_record_title">Academic
+                    Record</h3>
+                <p style="margin: 4px 0 0 0; font-size: 11px; opacity: 0.8;" data-i18n="academic_record_sub">Theory
+                    subjects only</p>
+            </div>
+            <button onclick="document.getElementById('academicRecordModal').style.display='none'"
+                style="background: rgba(255,255,255,0.2); border: none; color: white; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 16px;">
+                ✕
+            </button>
+        </div>
+
+        <!-- Tabs -->
+        <div style="display: flex; border-bottom: 2px solid #f1f5f9;">
+            <button id="tabAttendance" onclick="switchAcademicTab('attendance')"
+                style="flex: 1; padding: 12px; border: none; background: white; font-weight: 800; color: #10b981; border-bottom: 3px solid #10b981; cursor: pointer; font-size: 14px;">
+                ✅ <span data-i18n="academic_tab_attendance">Attendance</span>
+                <span id="attendanceTabCount"
+                    style="background: #dcfce7; color: #166534; padding: 2px 8px; border-radius: 10px; font-size: 12px;">0</span>
+            </button>
+            <button id="tabAbsence" onclick="switchAcademicTab('absence')"
+                style="flex: 1; padding: 12px; border: none; background: #f8fafc; font-weight: 800; color: #94a3b8; cursor: pointer; font-size: 14px;">
+                ❌ <span data-i18n="academic_tab_absence">Absence</span>
+                <span id="absenceTabCount"
+                    style="background: #f1f5f9; color: #64748b; padding: 2px 8px; border-radius: 10px; font-size: 12px;">0</span>
+            </button>
+        </div>
+
+        <!-- Content -->
+        <div id="academicRecordContent" style="max-height: 400px; overflow-y: auto; padding: 15px;">
+            <div style="text-align: center; padding: 30px; color: #94a3b8;">
+                <i class="fa-solid fa-circle-notch fa-spin" style="font-size: 30px;"></i>
+                <p data-i18n="academic_loading">Loading...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script type="module" src="academic-record.js"></script>
+
+<div id="farModal">
+    <div class="far-box">
+
+        <!-- Topbar -->
+        <div class="far-topbar">
+            <div class="far-brand">
+                <span class="far-brand-badge">FAR</span>
+                <div>
+                    <div class="far-brand-name">نظام الاستخبارات</div>
+                    <div class="far-brand-sub">كشف الغش عبر بصمات الأجهزة</div>
+                </div>
+            </div>
+            <button class="far-close" onclick="closeFARModal()">&#x2715;</button>
+        </div>
+
+        <!-- Body -->
+        <div class="far-body">
+
+            <!-- الشاشة 1: اختيار اليوم -->
+            <div id="screenDate">
+                <div class="far-date-label">اختر يوم الفحص</div>
+                <div class="far-date-row">
+                    <input type="date" id="farDateInput">
+                    <button id="farStartBtn" onclick="farStartScan()">ابدأ الفحص</button>
+                </div>
+            </div>
+
+            <!-- الشاشة 2: قائمة الجلسات -->
+            <div id="screenSessions"></div>
+
+            <!-- الشاشة 3: تفاصيل جلسة -->
+            <div id="screenSession"></div>
+
+        </div>
+    </div>
+</div>
 
 </body>
-
 
 
 

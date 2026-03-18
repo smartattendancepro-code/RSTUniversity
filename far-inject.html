@@ -1,0 +1,53 @@
+<!-- ══════════════════════════════════════════════════════
+     زر الاستخبارات FAR — ضيفه جوه dean-grid-layout
+     (مخفي — يظهر أوتو لو role == "dean")
+     ══════════════════════════════════════════════════════ -->
+<button id="farBtn" onclick="openFARSystem()" class="dean-btn-modern far-style" style="display:none;">
+    <div class="dean-icon-box">
+        <i class="fa-solid fa-user-secret fa-fade"></i>
+    </div>
+    <div class="dean-btn-text">
+        <span class="main-text">الاستخبارات</span>
+        <span class="sub-text">كشف الغش — FAR</span>
+    </div>
+</button>
+
+<!-- ══════════════════════════════════════════════════════
+     المودال الرئيسي
+     ══════════════════════════════════════════════════════ -->
+<div id="farModal">
+    <div class="far-box">
+
+        <!-- Topbar -->
+        <div class="far-topbar">
+            <div class="far-brand">
+                <span class="far-brand-badge">FAR</span>
+                <div>
+                    <div class="far-brand-name">نظام الاستخبارات</div>
+                    <div class="far-brand-sub">كشف الغش عبر بصمات الأجهزة</div>
+                </div>
+            </div>
+            <button class="far-close" onclick="closeFARModal()">&#x2715;</button>
+        </div>
+
+        <!-- Body -->
+        <div class="far-body">
+
+            <!-- الشاشة 1: اختيار اليوم -->
+            <div id="screenDate">
+                <div class="far-date-label">اختر يوم الفحص</div>
+                <div class="far-date-row">
+                    <input type="date" id="farDateInput">
+                    <button id="farStartBtn" onclick="farStartScan()">ابدأ الفحص</button>
+                </div>
+            </div>
+
+            <!-- الشاشة 2: قائمة الجلسات -->
+            <div id="screenSessions"></div>
+
+            <!-- الشاشة 3: تفاصيل جلسة -->
+            <div id="screenSession"></div>
+
+        </div>
+    </div>
+</div>
