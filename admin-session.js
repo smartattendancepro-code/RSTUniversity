@@ -111,6 +111,27 @@ window.toggleSessionState = async function () {
                 console.warn("College fetch failed, using defaults", e);
             }
 
+            let enrolledSubjectNames = new Set();
+            try {
+                const enrollSnap = await getDocs(query(
+                    collection(db, "subject_enrollments"),
+                    where("doctorUID", "==", user.uid)
+                ));
+                const sharedSnap = await getDocs(query(
+                    collection(db, "subject_enrollments"),
+                    where("sharedWithAll", "==", true),
+                    where("college", "==", doctorCollege)  // ✅ doctorCollege متاح
+                ));
+                enrollSnap.forEach(d => { if (d.data().subjectName) enrolledSubjectNames.add(d.data().subjectName); });
+                sharedSnap.forEach(d => { if (d.data().subjectName) enrolledSubjectNames.add(d.data().subjectName); });
+            } catch (e) { console.warn("Enrollment fetch skipped:", e); }
+
+            // إضافة ✅ للمواد المسجلة
+            subjectsArray = subjectsArray.map(sub => {
+                const cleanSub = sub.replace("🕒 ", "").trim();
+                return enrolledSubjectNames.has(cleanSub) ? `✅ ${sub}` : sub;
+            });
+
             const historySubs = SmartHistory.get(`history_subjects_${user.uid}`);
             if (historySubs.length > 0) {
                 const markedSubs = historySubs.map(s => `🕒 ${s}`);
@@ -146,7 +167,7 @@ window.confirmSessionStart = async function () {
         return;
     }
 
-    const subject = subjectEl.value.replace("🕒 ", "").trim();
+    const subject = subjectEl.value.replace("🕒 ", "").replace("✅ ", "").trim();
     const hall = hallEl.value.replace("🕒 ", "").trim();
     let rawGroup = groupEl ? groupEl.value.replace(/\s+/g, '').toUpperCase() : "";
     let groupInput = "GENERAL";
