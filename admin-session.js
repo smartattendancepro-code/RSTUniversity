@@ -13,8 +13,6 @@ import { i18n } from './i18n.js';
 import { applyVipTheme } from './VipThemeManager.js';
 
 
-const db = window.db;
-const auth = window.auth;
 
 window.LECTURE_SETUP_CACHE = { subjects: [], halls: [], isReady: false };
 
@@ -42,7 +40,7 @@ async function syncServerTime() {
 syncServerTime();
 
 window.verifyAdminRole = async function () {
-    const user = auth.currentUser;
+    const user = window.auth?.currentUser;
     if (!user) return false;
 
     try {
@@ -80,7 +78,7 @@ window.LECTURE_SETUP_CACHE = {
  * دالة الجلب المسبق - تجلب البيانات "مرة واحدة" في الخلفية
  */
 window.preFetchAdminSetupData = async function () {
-    const user = auth.currentUser;
+    const user = window.auth?.currentUser;
     if (!user || !sessionStorage.getItem("secure_admin_session_token_v99")) return;
     if (window.LECTURE_SETUP_CACHE.isReady && window.LECTURE_SETUP_CACHE.doctorUID === user.uid) return;
 
@@ -148,7 +146,7 @@ window.toggleSessionState = async function () {
     modal.style.display = 'flex';
     document.body.style.overflow = 'hidden';
 
-    const user = auth.currentUser;
+    const user = window.auth?.currentUser;
     const cache = window.LECTURE_SETUP_CACHE;
 
     // 3. حالة الطوارئ: لو الكاش غير جاهز، انتظر الجلب مرة واحدة فقط
@@ -233,7 +231,7 @@ window.confirmSessionStart = async function () {
     }
 
     const password = passEl ? passEl.value.trim() : "";
-    const user = auth.currentUser;
+    const user = window.auth?.currentUser;
     const lang = localStorage.getItem('sys_lang') || 'ar';
     const dict = (typeof i18n !== 'undefined' && i18n[lang]) ? i18n[lang] : {};
 
@@ -364,7 +362,7 @@ window.closeSessionImmediately = function () {
     if (confirmBtn) confirmBtn.innerText = (lang === 'ar') ? "تأكيد وحفظ ✅" : "Confirm & Save ✅";
 
     showModernConfirm(title, msg, async function () {
-        const user = auth.currentUser;
+        const user = window.auth?.currentUser;
         if (!user) return;
 
         const actionBtn = document.getElementById('btnConfirmYes') || document.querySelector('.confirm-btn-yes');
@@ -659,7 +657,7 @@ window.closeSessionImmediately = function () {
 
 
 window.performSessionPause = async function () {
-    const user = auth.currentUser;
+    const user = window.auth?.currentUser;
     if (!user) return;
 
     const btn = document.querySelector('#sessionActionModal .btn-main');
@@ -715,7 +713,7 @@ window.triggerSessionEndOptions = function () {
 
 
 window.listenToSessionState = function () {
-    const user = auth.currentUser;
+    const user = window.auth?.currentUser;
 
     if (!user) {
         console.log("⚠️ No user found, skipping session listener.");
@@ -904,7 +902,7 @@ window.handleSessionTimer = function (isActive, startTime, duration) {
                     doorStatus.style.color = "#f59e0b";
                 } else {
                     clearInterval(sessionInterval);
-                    const user = auth.currentUser;
+                    const user = window.auth?.currentUser;
 
                     updateDoc(doc(db, "active_sessions", user.uid), {
                         isDoorOpen: false,
@@ -955,7 +953,7 @@ window.handleSessionTimer = function (isActive, startTime, duration) {
     sessionInterval = setInterval(updateTick, 1000);
 };
 window.closeDoorImmediately = async function () {
-    const user = auth.currentUser;
+    const user = window.auth?.currentUser;
     if (!user) return;
 
     const lang = localStorage.getItem('sys_lang') || 'en';
@@ -1164,7 +1162,7 @@ window.openDoorActionModal = function () {
 };
 
 window.confirmOpenDoor = async function (seconds) {
-    const user = auth.currentUser;
+    const user = window.auth?.currentUser;
 
     const maxInput = document.getElementById('doorMaxLimitInput');
     let maxStudentsVal = 9999;
@@ -1200,7 +1198,7 @@ window.confirmOpenDoor = async function (seconds) {
 
 
 window.startLiveSnapshotListener = function () {
-    const user = auth.currentUser;
+    const user = window.auth?.currentUser;
     if (!user) {
         console.log("⏳ Waiting for Auth to initialize...");
         setTimeout(window.startLiveSnapshotListener, 500);

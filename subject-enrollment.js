@@ -8,8 +8,6 @@ import {
     onSnapshot, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-const db = window.db;
-const auth = window.auth;
 
 window.enrollmentCache = {
     adminStatus: new Map(),
@@ -60,7 +58,7 @@ const cache = window.enrollmentCache;
 })();
 
 window.preFetchEnrollments = async function () {
-    const user = auth.currentUser;
+    const user = window.auth?.currentUser;
     if (!user || window.enrollmentCache.isInitialLoadDone) return;
 
     try {
@@ -110,7 +108,7 @@ window.openSubjectEnrollmentModal = async function () {
     // 1. إظهار المودال فوراً (تحسين تجربة المستخدم)
     modal.style.display = 'flex';
 
-    const user = auth.currentUser;
+    const user = window.auth?.currentUser;
     if (!user) {
         showToast?.("⚠️ يرجى تسجيل الدخول أولاً", 3000, "#f59e0b");
         modal.style.display = 'none';
@@ -205,7 +203,7 @@ window.saveAndLoadCollege = async function () {
     }
 
     const college = select.value;
-    const user = auth.currentUser;
+    const user = window.auth?.currentUser;
     if (!user) return;
 
     const btn = document.getElementById('btnSaveCollege');
@@ -478,7 +476,7 @@ window.handleSubjectExcelUpload = async function (input, subjectName) {
     const file = input.files[0];
     if (!file) return;
 
-    const user = auth.currentUser;
+    const user = window.auth?.currentUser;
     if (!user) return showToast?.("⚠️ يجب تسجيل الدخول أولاً", 3000, "#f59e0b");
 
     showToast?.("⏳ جاري قراءة الملف...", 2000, "#7c3aed");
@@ -532,7 +530,7 @@ window.handleAdminSharedExcelUpload = async function (input, subjectName) {
     const file = input.files[0];
     if (!file) return;
 
-    const user = auth.currentUser;
+    const user = window.auth?.currentUser;
     if (!user) return showToast?.("⚠️ يجب تسجيل الدخول", 3000, "#f59e0b");
 
     if (!(await getAdminStatus(user.uid))) return showToast?.("❌ هذه الميزة للأدمن فقط", 3000, "#ef4444");
@@ -585,7 +583,7 @@ window.handleAdminSharedExcelUpload = async function (input, subjectName) {
 };
 
 window.adminDeleteEnrollment = async function (docId, subjectName) {
-    const user = auth.currentUser;
+    const user = window.auth?.currentUser;
     if (!user) return;
     if (!(await getAdminStatus(user.uid))) return showToast?.("❌ ليس لديك صلاحية", 3000, "#ef4444");
 

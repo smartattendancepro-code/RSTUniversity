@@ -120,7 +120,8 @@ const _0x = function (index) {
     return _0xCore[index];
 };
 
-onAuthStateChanged(auth, async (_0xUser) => {
+onAuthStateChanged(window.auth, async (_0xUser) => {
+
     const _0xSD = document[_0x(0)](_0x(1));
     const _0xFM = document[_0x(0)](_0x(2));
     const _0xPW = document[_0x(0)](_0x(3));
@@ -275,7 +276,9 @@ onAuthStateChanged(auth, async (_0xUser) => {
 window.studentStatusListener = null;
 
 window.monitorMyParticipation = async function () {
-    const user = auth.currentUser;
+    const auth = window.auth; // ✅ اسحبها هنا جوه الدالة
+    const db = window.db
+    const user = window.auth?.currentUser;
     const mainBtn = document.getElementById('mainActionBtn');
 
     if (!user) return;
@@ -649,7 +652,7 @@ document.addEventListener('click', (e) => {
 
     (async () => {
         try {
-            const user = auth.currentUser;
+            const user = window.auth?.currentUser;
             if (user) {
                 const facSnap = await getDoc(doc(db, "faculty_members", user.uid));
                 if (facSnap.exists()) {
@@ -1225,7 +1228,7 @@ document.addEventListener('click', (e) => {
     window.startProcess = async function (isRetry) {
         if (typeof playClick === 'function') playClick();
 
-        const user = auth.currentUser;
+        const user = window.auth?.currentUser;
 
         if (!user) {
             if (typeof window.openAuthDrawer === 'function') window.openAuthDrawer();
@@ -1461,6 +1464,8 @@ document.addEventListener('click', (e) => {
     });
 
     window.performStudentLogin = async () => {
+        const auth = window.auth; // ✅ إضافة السطر ده
+        const db = window.db;
         const _t = (typeof t === 'function') ? t : (key, def) => def;
 
         const email = document.getElementById('studentLoginEmail').value.trim();
@@ -1614,12 +1619,15 @@ document.addEventListener('click', (e) => {
         }
     };
     window.joinSessionAction = async function () {
+
+        const auth = window.auth; // ✅ إضافة السطر ده
+        const db = window.db;     // ✅ إضافة السطر ده
         const passInput = document.getElementById('sessionPass').value.trim();
         const btn = document.getElementById('btnJoinFinal');
         const targetDrUID = sessionStorage.getItem('TEMP_DR_UID');
         const originalText = btn.innerHTML;
 
-        const user = auth.currentUser;
+        const user = window.auth?.currentUser;
         if (!user) {
             showToast("❌ يجب تسجيل الدخول أولاً", 3000, "#ef4444");
             return;
@@ -2424,7 +2432,7 @@ document.addEventListener('click', (e) => {
 
         try {
             // جيب بيانات الدكتور/العميد مباشرة
-            const user = auth.currentUser;
+            const user = window.auth?.currentUser;
             const adminToken = sessionStorage.getItem("secure_admin_session_token_v99");
             const isDean = (adminToken === "SUPER_ADMIN_ACTIVE");
             const isDoctor = (adminToken === "ADMIN_ACTIVE");
@@ -3242,7 +3250,7 @@ document.addEventListener('click', (e) => {
         const originalText = btn.innerHTML;
 
         try {
-            const user = auth.currentUser;
+            const user = window.auth?.currentUser;
             if (!user) {
                 showToast("⚠️ يجب تسجيل الدخول كدكتور أولاً", 3000, "#f59e0b");
                 return;
@@ -3381,7 +3389,7 @@ document.addEventListener('click', (e) => {
         }
 
         try {
-            const user = auth.currentUser;
+            const user = window.auth?.currentUser;
             if (!user) throw new Error("يجب تسجيل الدخول أولاً");
 
 
@@ -3614,7 +3622,7 @@ document.addEventListener('click', (e) => {
                 let freshData = docSnap.data();
 
                 if (collectionName === "user_registrations") {
-                    const user = auth.currentUser;
+                    const user = window.auth?.currentUser;
                     if (user && user.uid === docId) {
                         try {
                             const sensitiveRef = doc(db, "user_registrations", docId, "sensitive_info", "main");
@@ -3641,7 +3649,7 @@ document.addEventListener('click', (e) => {
     };
 
     window.openStudentProfile = async function (forceRefresh = false) {
-        const user = auth.currentUser;
+        const user = window.auth?.currentUser;
 
         const infoBtn = document.getElementById('infoBtn');
         if (infoBtn) infoBtn.style.display = 'none';
@@ -3877,7 +3885,7 @@ document.addEventListener('click', (e) => {
     };
 
     window.openAvatarSelector = async function () {
-        const user = auth.currentUser;
+        const user = window.auth?.currentUser;
         if (!user) return;
 
         const grid = document.getElementById('avatarsGrid');
@@ -3921,7 +3929,7 @@ document.addEventListener('click', (e) => {
     };
 
     window.saveNewAvatar = async function (iconClass, color) {
-        const user = auth.currentUser;
+        const user = window.auth?.currentUser;
         if (!user) return;
 
         const studentAvatar = document.getElementById('currentAvatar');
@@ -4346,7 +4354,7 @@ document.addEventListener('click', (e) => {
     };
 
     window.openFacultyProfile = async function () {
-        const user = auth.currentUser;
+        const user = window.auth?.currentUser;
         if (!user) {
             showToast("⚠️ Please login first", 3000, "#f59e0b");
             return;
@@ -4424,7 +4432,7 @@ document.addEventListener('click', (e) => {
 
 
     window.updateStudentStatus = async function (docId, newStatus) {
-        const user = auth.currentUser;
+        const user = window.auth?.currentUser;
         if (!user) return;
 
         const _t = (typeof t === 'function') ? t : (key, def) => def;
@@ -4452,7 +4460,7 @@ document.addEventListener('click', (e) => {
     };
 
     window.toggleStudentFlag = async function (docId, field, currentValue) {
-        const user = auth.currentUser;
+        const user = window.auth?.currentUser;
         if (!user) return;
 
         const studentRef = doc(db, "active_sessions", user.uid, "participants", docId);
@@ -4466,7 +4474,7 @@ document.addEventListener('click', (e) => {
     let unsubscribeLiveSnapshot = null;
 
     window.toggleStudentStatus = async function (docId, currentStatus) {
-        const user = auth.currentUser;
+        const user = window.auth?.currentUser;
         if (!user) return;
 
         const newStatus = currentStatus === 'left' ? 'active' : 'left';
@@ -5002,7 +5010,7 @@ document.addEventListener('click', (e) => {
             return;
         }
 
-        const user = auth.currentUser;
+        const user = window.auth?.currentUser;
         const docName = document.getElementById('profFacName')?.innerText || "Doctor";
 
         btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> جاري الإرسال...';
@@ -5069,7 +5077,7 @@ document.addEventListener('click', (e) => {
         localStorage.setItem('sys_lang', lang);
     };
     window.toggleSystemLanguage = async function () {
-        const user = auth.currentUser;
+        const user = window.auth?.currentUser;
         const currentLang = localStorage.getItem('sys_lang') || 'ar';
         const newLang = (currentLang === 'ar') ? 'en' : 'ar';
 
@@ -5297,7 +5305,7 @@ document.addEventListener('click', (e) => {
 
 
     window.checkForPendingSurveys = async function () {
-        const user = auth.currentUser;
+        const user = window.auth?.currentUser;
         const isAdmin = sessionStorage.getItem("secure_admin_session_token_v99");
         if (!user || isAdmin) return;
 
@@ -5728,7 +5736,7 @@ document.addEventListener('click', (e) => {
     let feedbackUnsubscribe = null;
 
     window.initFeedbackListener = function () {
-        const user = auth.currentUser;
+        const user = window.auth?.currentUser;
         if (!user) return;
 
         const now = new Date();
@@ -6594,7 +6602,7 @@ window.confirmManualAdd = async function () {
 
     const student = window.tempManualStudentData;
     const btn = document.querySelector('#manualConfirmStep .btn-confirm-green'); // تأكد من كلاس الزر لديك
-    const user = auth.currentUser;
+    const user = window.auth?.currentUser;
 
     if (!user) {
         showToast("⚠️ يجب تسجيل الدخول أولاً", 3000, "#f59e0b");
@@ -6762,7 +6770,7 @@ window.autoFetchName = async function (studentId) {
 };
 
 window.handleProfileIconClick = function () {
-    const user = auth.currentUser;
+    const user = window.auth?.currentUser;
     const adminToken = sessionStorage.getItem("secure_admin_session_token_v99");
 
     if (!user) {
@@ -7046,7 +7054,7 @@ window.addNewGroupToSession = async function () {
     const groupName = input.value.trim().toUpperCase();
     if (!groupName) return;
 
-    const user = auth.currentUser;
+    const user = window.auth?.currentUser;
     const sessionRef = doc(db, "active_sessions", user.uid);
 
     try {
@@ -7059,7 +7067,7 @@ window.addNewGroupToSession = async function () {
 };
 
 window.removeGroupFromSession = async function (groupName) {
-    const user = auth.currentUser;
+    const user = window.auth?.currentUser;
     const sessionRef = doc(db, "active_sessions", user.uid);
     try {
         await updateDoc(sessionRef, {
