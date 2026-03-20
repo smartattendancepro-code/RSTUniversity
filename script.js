@@ -175,6 +175,13 @@ onAuthStateChanged(auth, async (_0xUser) => {
                 if (_0xSnap[_0x(18)]()) {
                     _0xData = _0xSnap[_0x(19)]();
 
+                    if (typeof window.preFetchAdminSetupData === 'function') {
+                        window.preFetchAdminSetupData();
+                    }
+                    if (typeof window.preFetchEnrollments === 'function') {
+                        window.preFetchEnrollments();
+                    }
+
                     window[_0x(67)] = _0xData[_0x(20)];
                     window[_0x(68)] = _0xData[_0x(21)] || _0xData[_0x(22)];
                     window[_0x(69)] = "";
