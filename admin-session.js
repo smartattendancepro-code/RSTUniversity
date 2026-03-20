@@ -5,7 +5,7 @@ import {
 } from './config.js';
 import { SmartHistory } from './SmartHistory.js';
 import {
-    doc, getDoc, setDoc, updateDoc,deleteDoc, collection, query, where, getDocs,
+    doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, where, getDocs,
     onSnapshot, serverTimestamp, increment, writeBatch, orderBy, limit,
     arrayUnion, arrayRemove, getCountFromServer
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
@@ -15,6 +15,8 @@ import { applyVipTheme } from './VipThemeManager.js';
 
 const db = window.db;
 const auth = window.auth;
+
+window.LECTURE_SETUP_CACHE = { subjects: [], halls: [], isReady: false };
 
 window.globalTimeOffset = 0;
 
@@ -65,96 +67,117 @@ let unsubscribeLiveSnapshot = null;
 let deanRadarUnsubscribe = null;
 let unsubscribeHeaderSession = null;
 
-window.toggleSessionState = async function () {
+// 1. مخزن البيانات الذكي (Global Cache)
+window.LECTURE_SETUP_CACHE = {
+    isReady: false,
+    baseSubjects: [],
+    baseHalls: [],
+    detectedLetter: "N",
+    doctorUID: null
+};
 
+/**
+ * دالة الجلب المسبق - تجلب البيانات "مرة واحدة" في الخلفية
+ */
+window.preFetchAdminSetupData = async function () {
+    const user = auth.currentUser;
+    if (!user || !sessionStorage.getItem("secure_admin_session_token_v99")) return;
+    if (window.LECTURE_SETUP_CACHE.isReady && window.LECTURE_SETUP_CACHE.doctorUID === user.uid) return;
+
+    try {
+        const collegeLetterMap = { "NURS": "N", "PT": "P", "PHARM": "C", "DENT": "D", "CS": "T", "BA": "B", "HS": "H" };
+        let doctorCollege = "NURS";
+        let doctorLevel = null;
+
+        // جلب بيانات الكلية
+        const facSnap = await getDoc(doc(db, "faculty_members", user.uid));
+        if (facSnap.exists()) {
+            const facData = facSnap.data();
+            doctorCollege = facData.college || "NURS";
+            doctorLevel = facData.level || null;
+        }
+
+        // تحضير المواد والقاعات من الـ Config (سريع جداً)
+        let subjectsArray = doctorLevel ? getSubjectsByCollegeAndLevel(doctorCollege, doctorLevel) : getAllSubjectsByCollege(doctorCollege);
+        let hallsArray = getHallsByCollege(doctorCollege);
+        let detectedLetter = collegeLetterMap[doctorCollege] || "N";
+
+        // جلب النجوم ⭐ من السيرفر في الخلفية
+        let enrolledSubjectNames = new Set();
+        try {
+            const [enrollSnap, sharedSnap] = await Promise.all([
+                getDocs(query(collection(db, "subject_enrollments"), where("doctorUID", "==", user.uid))),
+                getDocs(query(collection(db, "subject_enrollments"), where("sharedWithAll", "==", true), where("college", "==", doctorCollege)))
+            ]);
+            enrollSnap.forEach(d => { if (d.data().subjectName) enrolledSubjectNames.add(d.data().subjectName.trim()); });
+            sharedSnap.forEach(d => { if (d.data().subjectName) enrolledSubjectNames.add(d.data().subjectName.trim()); });
+        } catch (e) { console.warn("Stars fetch failed"); }
+
+        // دمج النجوم ⭐
+        subjectsArray = subjectsArray.map(sub => enrolledSubjectNames.has(sub.trim()) ? `${sub} ⭐` : sub);
+
+        // حفظ في الكاش
+        window.LECTURE_SETUP_CACHE = {
+            isReady: true,
+            baseSubjects: subjectsArray,
+            baseHalls: hallsArray,
+            detectedLetter: detectedLetter,
+            doctorUID: user.uid
+        };
+        console.log("⚡ Setup Data Pre-fetched Successfully.");
+    } catch (err) { console.error("Pre-fetch Error:", err); }
+};
+
+window.toggleSessionState = async function () {
+    // 1. التحقق من صلاحية الجلسة
     if (!sessionStorage.getItem("secure_admin_session_token_v99")) return;
 
     const btn = document.getElementById('btnToggleSession');
 
+    // 2. إذا كانت هناك محاضرة مفتوحة، ادخل القاعة فوراً
     if (btn && btn.classList.contains('session-open')) {
-        switchScreen('screenLiveSession');
+        if (typeof switchScreen === 'function') switchScreen('screenLiveSession');
         if (typeof startLiveSnapshotListener === 'function') startLiveSnapshotListener();
         return;
     }
 
     const modal = document.getElementById('customTimeModal');
-    if (modal) {
-        modal.style.display = 'flex';
-        document.body.style.overflow = 'hidden';
+    if (!modal) return;
 
-        let subjectsArray = [];
-        let hallsArray = [];
+    // إظهار المودال فوراً
+    modal.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
 
-        const collegeLetterMap = { "NURS": "N", "PT": "P", "PHARM": "C", "DENT": "D", "CS": "T", "BA": "B", "HS": "H" };
-        let detectedLetter = "N";
+    const user = auth.currentUser;
+    const cache = window.LECTURE_SETUP_CACHE;
 
-        const user = auth.currentUser;
-        if (user) {
-            let doctorCollege = "NURS"; 
+    // 3. حالة الطوارئ: لو الكاش غير جاهز، انتظر الجلب مرة واحدة فقط
+    if (!cache.isReady || cache.doctorUID !== user?.uid) {
+        await window.preFetchAdminSetupData();
+    }
 
-            try {
-                const facSnap = await getDoc(doc(db, "faculty_members", user.uid));
-                if (facSnap.exists()) {
-                    const facData = facSnap.data();
-                    doctorCollege = facData.college || "NURS"; 
-                    const doctorLevel = facData.level || null;
+    // 4. دمج التاريخ المحلي (History 🕒) - سريع جداً (Local Storage)
+    let finalSubjects = [...window.LECTURE_SETUP_CACHE.baseSubjects];
+    let finalHalls = [...window.LECTURE_SETUP_CACHE.baseHalls];
 
-                    if (doctorLevel) {
-                        subjectsArray = getSubjectsByCollegeAndLevel(doctorCollege, doctorLevel);
-                    } else {
-                        subjectsArray = getAllSubjectsByCollege(doctorCollege);
-                    }
-
-                    hallsArray = getHallsByCollege(doctorCollege);
-                    detectedLetter = collegeLetterMap[doctorCollege] || "N";
-                }
-            } catch (e) {
-                console.warn("College fetch failed, using defaults", e);
-            }
-
-            let enrolledSubjectNames = new Set();
-            try {
-                const [enrollSnap, sharedSnap] = await Promise.all([
-                    getDocs(query(
-                        collection(db, "subject_enrollments"),
-                        where("doctorUID", "==", user.uid)
-                    )),
-                    getDocs(query(
-                        collection(db, "subject_enrollments"),
-                        where("sharedWithAll", "==", true),
-                        where("college", "==", doctorCollege)
-                    ))
-                ]);
-                enrollSnap.forEach(d => { if (d.data().subjectName) enrolledSubjectNames.add(d.data().subjectName); });
-                sharedSnap.forEach(d => { if (d.data().subjectName) enrolledSubjectNames.add(d.data().subjectName); });
-            } catch (e) {
-                console.warn("Enrollment fetch skipped:", e);
-            }
-
-            subjectsArray = subjectsArray.map(sub => {
-                const cleanSub = sub.replace("🕒 ", "").trim();
-                return enrolledSubjectNames.has(cleanSub) ? `${sub} ⭐` : sub;
-            });
-
-            const historySubs = SmartHistory.get(`history_subjects_${user.uid}`);
-            if (historySubs.length > 0) {
-                const markedSubs = historySubs.map(s => `🕒 ${s}`);
-                subjectsArray = [...markedSubs, ...subjectsArray];
-            }
-
-            const historyHalls = SmartHistory.get(`history_halls_${user.uid}`);
-            if (historyHalls.length > 0) {
-                const markedHalls = historyHalls.map(h => `🕒 ${h}`);
-                hallsArray = [...markedHalls, ...hallsArray];
-            }
+    if (user) {
+        const historySubs = SmartHistory.get(`history_subjects_${user.uid}`);
+        if (historySubs.length > 0) {
+            finalSubjects = [...historySubs.map(s => `🕒 ${s}`), ...finalSubjects];
         }
 
-        const groupEl = document.getElementById('modalGroupInput');
-        if (groupEl) groupEl.placeholder = `e.g. 1${detectedLetter}1`;
-
-        renderCustomList('subjectList', subjectsArray, 'finalSubjectValue');
-        renderCustomList('hallList', hallsArray, 'finalHallValue');
+        const historyHalls = SmartHistory.get(`history_halls_${user.uid}`);
+        if (historyHalls.length > 0) {
+            finalHalls = [...historyHalls.map(h => `🕒 ${h}`), ...finalHalls];
+        }
     }
+
+    // 5. تحديث الواجهة (بسرعة البرق)
+    const groupEl = document.getElementById('modalGroupInput');
+    if (groupEl) groupEl.placeholder = `e.g. 1${window.LECTURE_SETUP_CACHE.detectedLetter}1`;
+
+    renderCustomList('subjectList', finalSubjects, 'finalSubjectValue');
+    renderCustomList('hallList', finalHalls, 'finalHallValue');
 };
 
 
@@ -170,8 +193,15 @@ window.confirmSessionStart = async function () {
         return;
     }
 
-    const subject = subjectEl.value.replace("🕒 ", "").replace("✅ ", "").trim();
+    // ✅ تصحيح: تنظيف اسم المادة من كل الرموز (الساعة، النجمة، العلامة) لضمان البحث الصحيح
+    const subject = subjectEl.value
+        .replace("🕒 ", "")
+        .replace("⭐", "")
+        .replace("✅ ", "")
+        .trim();
+
     const hall = hallEl.value.replace("🕒 ", "").trim();
+
     let rawGroup = groupEl ? groupEl.value.replace(/\s+/g, '').toUpperCase() : "";
     let groupInput = "GENERAL";
     let resolvedGroups = ["GENERAL"];
@@ -191,7 +221,6 @@ window.confirmSessionStart = async function () {
 
         if (!groupPattern.test(rawGroup)) {
             showToast(`⚠️ Invalid Group Format! Must be like: 1${expectedLetter}1`, 4000, "#ef4444");
-
             if (groupEl) {
                 groupEl.style.borderColor = "#ef4444";
                 groupEl.focus();
@@ -201,10 +230,10 @@ window.confirmSessionStart = async function () {
         }
         groupInput = rawGroup;
         resolvedGroups = window.resolveGroups ? window.resolveGroups(rawGroup) : [rawGroup];
-    } const password = passEl ? passEl.value.trim() : "";
+    }
 
+    const password = passEl ? passEl.value.trim() : "";
     const user = auth.currentUser;
-
     const lang = localStorage.getItem('sys_lang') || 'ar';
     const dict = (typeof i18n !== 'undefined' && i18n[lang]) ? i18n[lang] : {};
 
@@ -223,6 +252,7 @@ window.confirmSessionStart = async function () {
     const facAvatarEl = document.getElementById('facCurrentAvatar');
     const avatarIconClass = facAvatarEl && facAvatarEl.querySelector('i') ? facAvatarEl.querySelector('i').className : "fa-solid fa-user-doctor";
 
+    // تحديث التاريخ المحلي للمواد والقاعات
     if (typeof SmartHistory !== 'undefined') {
         SmartHistory.push(`history_subjects_${user.uid}`, subject);
         SmartHistory.push(`history_halls_${user.uid}`, hall);
@@ -238,35 +268,40 @@ window.confirmSessionStart = async function () {
 
     try {
         const sessionRef = doc(db, "active_sessions", user.uid);
-
         let doctorCollege = "NURS";
-        try {
-            const facSnap = await getDoc(doc(db, "faculty_members", user.uid));
-            if (facSnap.exists()) doctorCollege = facSnap.data().college || "NURS";
-        } catch (e) { }
+        const facSnap = await getDoc(doc(db, "faculty_members", user.uid));
+        if (facSnap.exists()) doctorCollege = facSnap.data().college || "NURS";
 
         let enrollmentDocId = null;
         let enrolledStudentIds = [];
 
+        // ✅ تصحيح جلب الطلاب: البحث عن الملف الخاص بالدكتور "أو" الملف المشترك (Shared)
         try {
+            const enrollmentsRef = collection(db, "subject_enrollments");
             const enrollQ = query(
-                collection(db, "subject_enrollments"),
-                where("doctorUID", "==", user.uid),
-                where("subjectName", "==", subject)
+                enrollmentsRef,
+                where("subjectName", "==", subject),
+                where("college", "==", doctorCollege)
             );
             const enrollSnap = await getDocs(enrollQ);
 
             if (!enrollSnap.empty) {
-                const enrollData = enrollSnap.docs[0].data();
-                enrollmentDocId = enrollSnap.docs[0].id;
-                enrolledStudentIds = (enrollData.students || []).map(s => s.id);
+                // الأولوية لملف الدكتور، وإذا لم يوجد نأخذ الملف المشترك
+                const targetDoc = enrollSnap.docs.find(d => d.data().doctorUID === user.uid) ||
+                    enrollSnap.docs.find(d => d.data().sharedWithAll === true);
 
-                console.log(`✅ Enrollment linked: ${enrolledStudentIds.length} students`);
+                if (targetDoc) {
+                    const enrollData = targetDoc.data();
+                    enrollmentDocId = targetDoc.id;
+                    enrolledStudentIds = (enrollData.students || []).map(s => String(s.id).trim());
+                    console.log(`✅ Enrollment linked: ${enrolledStudentIds.length} students found.`);
+                }
             }
         } catch (e) {
-            console.warn("Enrollment link skipped:", e);
+            console.warn("Enrollment link failed:", e);
         }
 
+        // حفظ إعدادات الجلسة في Firestore
         await setDoc(sessionRef, {
             isActive: true,
             isDoorOpen: false,
@@ -283,9 +318,10 @@ window.confirmSessionStart = async function () {
             startTime: null,
             duration: 0,
             enrollmentDocId: enrollmentDocId,
-            enrolledStudentIds: enrolledStudentIds,
+            enrolledStudentIds: enrolledStudentIds, // القائمة الآن ستمتلئ ولن تكون فارغة
         }, { merge: true });
 
+        // تحديث واجهة الجلسة الحية
         if (document.getElementById('liveDocName')) document.getElementById('liveDocName').innerText = doctorName;
         if (document.getElementById('liveSubjectTag')) document.getElementById('liveSubjectTag').innerText = subject;
         if (document.getElementById('liveHallTag')) document.getElementById('liveHallTag').innerHTML = `<i class="fa-solid fa-building-columns"></i> ${hall}`;
@@ -299,7 +335,6 @@ window.confirmSessionStart = async function () {
         }
 
         switchScreen('screenLiveSession');
-
         if (typeof startLiveSnapshotListener === 'function') startLiveSnapshotListener();
 
         showToast("✅ " + (lang === 'ar' ? "تم التجهيز بنجاح" : "Session Ready"), 3000, "#10b981");
@@ -372,7 +407,7 @@ window.closeSessionImmediately = function () {
 
             const progressRef = doc(db, "active_sessions", user.uid, "close_progress", "current");
             const progressSnap = await getDoc(progressRef);
-            let lastCompletedBatch = -1; 
+            let lastCompletedBatch = -1;
             let totalBatches = 0;
 
             if (progressSnap.exists()) {
@@ -384,7 +419,7 @@ window.closeSessionImmediately = function () {
                     showToast(`🔄 استكمال الإغلاق من نقطة التوقف...`, 4000, "#3b82f6");
                 } else if (prog.status === 'completed') {
                     console.warn("⚠️ Progress موجود بحالة completed ولكن الجلسة نشطة، سيتم إعادة التشغيل.");
-                    await deleteDoc(progressRef); 
+                    await deleteDoc(progressRef);
                     lastCompletedBatch = -1;
                 }
             }
@@ -424,7 +459,7 @@ window.closeSessionImmediately = function () {
                 }
             }
 
-            const BATCH_LIMIT = 400; 
+            const BATCH_LIMIT = 400;
             let batches = [];
             let currentBatch = writeBatch(db);
             let opCounter = 0;
