@@ -17,7 +17,7 @@ window.enrollmentCache = {
     isInitialLoadDone: false // 🆕 إضافة دي عشان نعرف إننا حملنا الداتا قبل كدة
 };
 
-const cache = window.enrollmentCache; 
+const cache = window.enrollmentCache;
 
 
 (function injectStyles() {
@@ -186,7 +186,7 @@ window.openSubjectEnrollmentModal = async function () {
 window.closeSubjectEnrollmentModal = function () {
     const modal = document.getElementById('subjectEnrollmentModal');
     if (modal) modal.style.display = 'none';
-    
+
 };
 
 window.closeEnrolledStudentsModal = function () {
@@ -230,7 +230,128 @@ window.saveAndLoadCollege = async function () {
         if (btn) { btn.innerHTML = originalHTML; btn.disabled = false; }
     }
 };
+const renderFullList = (container, college, doctorUID, enrolledMap, isAdmin) => {
+    const subjects = getCollegeSubjects(college);
+    const allSubjects = Object.entries(subjects).flatMap(([year, names]) =>
+        names.map(name => ({ name, year }))
+    );
 
+    if (allSubjects.length === 0) {
+        container.innerHTML = `<div class="en-empty"><i class="fa-solid fa-book-open" style="font-size:40px;margin-bottom:15px;display:block;"></i><div style="font-weight:bold;">لا توجد مواد مضافة لهذه الكلية بعد</div></div>`;
+        return;
+    }
+
+    const yearLabels = {
+        first_year: "الفرقة الأولى", second_year: "الفرقة الثانية",
+        third_year: "الفرقة الثالثة", fourth_year: "الفرقة الرابعة",
+        fifth_year: "الفرقة الخامسة"
+    };
+
+    let html = `<div style="display:flex;justify-content:flex-end;margin-bottom:10px;"><span class="en-live-badge"><span class="en-live-dot"></span> تحديث لحظي مفعّل</span></div>`;
+    let lastYear = '';
+
+    allSubjects.forEach(({ name: subjectName, year }) => {
+        if (year !== lastYear) {
+            lastYear = year;
+            html += `<div class="en-year-header"><i class="fa-solid fa-layer-group"></i>${yearLabels[year] || year}</div>`;
+        }
+
+        const enrolled = enrolledMap[subjectName];
+        const isEnrolled = !!enrolled;
+        const subEscaped = subjectName.replace(/'/g, "\\'");
+
+        html += `
+                <div class="en-card ${isEnrolled ? 'enrolled' : ''}" data-subject="${subjectName}">
+                    <div class="en-card-body">
+                        <div style="flex:1;">
+                            <div class="en-subject-title">${subjectName}</div>
+                            ${isEnrolled ? `
+                                <div class="en-badges">
+                                    <span class="en-badge en-badge-success"><i class="fa-solid fa-check-circle"></i> مسجلة</span>
+                                    <span class="en-badge en-badge-info"><i class="fa-solid fa-users"></i> ${enrolled.studentCount} طالب</span>
+                                    ${enrolled.isShared ? `<span class="en-badge en-badge-warning"><i class="fa-solid fa-share-nodes"></i> مشترك</span>` : ''}
+                                </div>` : `
+                                <span class="en-badge en-badge-neutral"><i class="fa-solid fa-minus-circle"></i> لم تُسجَّل بعد</span>`}
+                        </div>
+                        <div class="en-actions">
+                            <label class="en-btn ${isEnrolled ? 'en-btn-update' : 'en-btn-primary'}">
+                                <i class="fa-solid fa-file-excel"></i>${isEnrolled ? 'تحديث' : 'رفع قائمة'}
+                                <input type="file" accept=".xlsx,.xls" style="display:none;" onchange="handleSubjectExcelUpload(this,'${subEscaped}')">
+                            </label>
+                            ${isAdmin ? `
+                                <label class="en-btn en-btn-admin">
+                                    <i class="fa-solid fa-globe"></i> رفع مشترك
+                                    <input type="file" accept=".xlsx,.xls" style="display:none;" onchange="handleAdminSharedExcelUpload(this,'${subEscaped}')">
+                                </label>` : ''}
+                            ${isEnrolled ? `
+                                <button class="en-btn en-btn-view" onclick="viewEnrolledStudents('${subEscaped}','${enrolled.docId}')">
+                                    <i class="fa-solid fa-eye"></i> عرض
+                                </button>` : ''}
+                            ${isAdmin && isEnrolled ? `
+                                <button class="en-btn en-btn-danger" onclick="adminDeleteEnrollment('${enrolled.docId}','${subEscaped}')">
+                                    <i class="fa-solid fa-trash"></i> حذف
+                                </button>` : ''}
+                        </div>
+                    </div>
+                </div>`;
+    });
+
+    container.innerHTML = html;
+    cache.enrollmentMap.set(doctorUID, enrolledMap);
+};
+
+const updateListDynamically = (container, college, doctorUID, newMap, isAdmin) => {
+    const oldMap = cache.enrollmentMap.get(doctorUID) || {};
+    const cards = container.querySelectorAll('.en-card');
+    cards.forEach(card => {
+        const subjectName = card.dataset.subject;
+        const oldEnrolled = oldMap[subjectName];
+        const newEnrolled = newMap[subjectName];
+
+        if ((oldEnrolled && !newEnrolled) || (!oldEnrolled && newEnrolled) ||
+            (oldEnrolled && newEnrolled && (oldEnrolled.studentCount !== newEnrolled.studentCount || oldEnrolled.isShared !== newEnrolled.isShared))) {
+
+            const year = card.previousElementSibling?.classList.contains('en-year-header') ? card.previousElementSibling.innerText : '';
+            const subEscaped = subjectName.replace(/'/g, "\\'");
+            let newHtml = `
+                    <div class="en-card ${newEnrolled ? 'enrolled' : ''}" data-subject="${subjectName}">
+                        <div class="en-card-body">
+                            <div style="flex:1;">
+                                <div class="en-subject-title">${subjectName}</div>
+                                ${newEnrolled ? `
+                                    <div class="en-badges">
+                                        <span class="en-badge en-badge-success"><i class="fa-solid fa-check-circle"></i> مسجلة</span>
+                                        <span class="en-badge en-badge-info"><i class="fa-solid fa-users"></i> ${newEnrolled.studentCount} طالب</span>
+                                        ${newEnrolled.isShared ? `<span class="en-badge en-badge-warning"><i class="fa-solid fa-share-nodes"></i> مشترك</span>` : ''}
+                                    </div>` : `
+                                    <span class="en-badge en-badge-neutral"><i class="fa-solid fa-minus-circle"></i> لم تُسجَّل بعد</span>`}
+                            </div>
+                            <div class="en-actions">
+                                <label class="en-btn ${newEnrolled ? 'en-btn-update' : 'en-btn-primary'}">
+                                    <i class="fa-solid fa-file-excel"></i>${newEnrolled ? 'تحديث' : 'رفع قائمة'}
+                                    <input type="file" accept=".xlsx,.xls" style="display:none;" onchange="handleSubjectExcelUpload(this,'${subEscaped}')">
+                                </label>
+                                ${isAdmin ? `
+                                    <label class="en-btn en-btn-admin">
+                                        <i class="fa-solid fa-globe"></i> رفع مشترك
+                                        <input type="file" accept=".xlsx,.xls" style="display:none;" onchange="handleAdminSharedExcelUpload(this,'${subEscaped}')">
+                                    </label>` : ''}
+                                ${newEnrolled ? `
+                                    <button class="en-btn en-btn-view" onclick="viewEnrolledStudents('${subEscaped}','${newEnrolled.docId}')">
+                                        <i class="fa-solid fa-eye"></i> عرض
+                                    </button>` : ''}
+                                ${isAdmin && newEnrolled ? `
+                                    <button class="en-btn en-btn-danger" onclick="adminDeleteEnrollment('${newEnrolled.docId}','${subEscaped}')">
+                                        <i class="fa-solid fa-trash"></i> حذف
+                                    </button>` : ''}
+                            </div>
+                        </div>
+                    </div>`;
+            card.outerHTML = newHtml;
+        }
+    });
+    cache.enrollmentMap.set(doctorUID, newMap);
+};
 async function attachRealtimeListener(college, doctorUID, doctorName) {
     const container = document.getElementById('enrollmentListContainer');
     if (!container) return;
@@ -309,128 +430,7 @@ async function attachRealtimeListener(college, doctorUID, doctorName) {
         if (!firstLoad) showToast?.("🔄 تم تحديث القائمة تلقائياً", 1500, "#7c3aed");
     };
 
-    const renderFullList = (container, college, doctorUID, enrolledMap, isAdmin) => {
-        const subjects = getCollegeSubjects(college);
-        const allSubjects = Object.entries(subjects).flatMap(([year, names]) =>
-            names.map(name => ({ name, year }))
-        );
 
-        if (allSubjects.length === 0) {
-            container.innerHTML = `<div class="en-empty"><i class="fa-solid fa-book-open" style="font-size:40px;margin-bottom:15px;display:block;"></i><div style="font-weight:bold;">لا توجد مواد مضافة لهذه الكلية بعد</div></div>`;
-            return;
-        }
-
-        const yearLabels = {
-            first_year: "الفرقة الأولى", second_year: "الفرقة الثانية",
-            third_year: "الفرقة الثالثة", fourth_year: "الفرقة الرابعة",
-            fifth_year: "الفرقة الخامسة"
-        };
-
-        let html = `<div style="display:flex;justify-content:flex-end;margin-bottom:10px;"><span class="en-live-badge"><span class="en-live-dot"></span> تحديث لحظي مفعّل</span></div>`;
-        let lastYear = '';
-
-        allSubjects.forEach(({ name: subjectName, year }) => {
-            if (year !== lastYear) {
-                lastYear = year;
-                html += `<div class="en-year-header"><i class="fa-solid fa-layer-group"></i>${yearLabels[year] || year}</div>`;
-            }
-
-            const enrolled = enrolledMap[subjectName];
-            const isEnrolled = !!enrolled;
-            const subEscaped = subjectName.replace(/'/g, "\\'");
-
-            html += `
-                <div class="en-card ${isEnrolled ? 'enrolled' : ''}" data-subject="${subjectName}">
-                    <div class="en-card-body">
-                        <div style="flex:1;">
-                            <div class="en-subject-title">${subjectName}</div>
-                            ${isEnrolled ? `
-                                <div class="en-badges">
-                                    <span class="en-badge en-badge-success"><i class="fa-solid fa-check-circle"></i> مسجلة</span>
-                                    <span class="en-badge en-badge-info"><i class="fa-solid fa-users"></i> ${enrolled.studentCount} طالب</span>
-                                    ${enrolled.isShared ? `<span class="en-badge en-badge-warning"><i class="fa-solid fa-share-nodes"></i> مشترك</span>` : ''}
-                                </div>` : `
-                                <span class="en-badge en-badge-neutral"><i class="fa-solid fa-minus-circle"></i> لم تُسجَّل بعد</span>`}
-                        </div>
-                        <div class="en-actions">
-                            <label class="en-btn ${isEnrolled ? 'en-btn-update' : 'en-btn-primary'}">
-                                <i class="fa-solid fa-file-excel"></i>${isEnrolled ? 'تحديث' : 'رفع قائمة'}
-                                <input type="file" accept=".xlsx,.xls" style="display:none;" onchange="handleSubjectExcelUpload(this,'${subEscaped}')">
-                            </label>
-                            ${isAdmin ? `
-                                <label class="en-btn en-btn-admin">
-                                    <i class="fa-solid fa-globe"></i> رفع مشترك
-                                    <input type="file" accept=".xlsx,.xls" style="display:none;" onchange="handleAdminSharedExcelUpload(this,'${subEscaped}')">
-                                </label>` : ''}
-                            ${isEnrolled ? `
-                                <button class="en-btn en-btn-view" onclick="viewEnrolledStudents('${subEscaped}','${enrolled.docId}')">
-                                    <i class="fa-solid fa-eye"></i> عرض
-                                </button>` : ''}
-                            ${isAdmin && isEnrolled ? `
-                                <button class="en-btn en-btn-danger" onclick="adminDeleteEnrollment('${enrolled.docId}','${subEscaped}')">
-                                    <i class="fa-solid fa-trash"></i> حذف
-                                </button>` : ''}
-                        </div>
-                    </div>
-                </div>`;
-        });
-
-        container.innerHTML = html;
-        cache.enrollmentMap.set(doctorUID, enrolledMap);
-    };
-
-    const updateListDynamically = (container, college, doctorUID, newMap, isAdmin) => {
-        const oldMap = cache.enrollmentMap.get(doctorUID) || {};
-        const cards = container.querySelectorAll('.en-card');
-        cards.forEach(card => {
-            const subjectName = card.dataset.subject;
-            const oldEnrolled = oldMap[subjectName];
-            const newEnrolled = newMap[subjectName];
-
-            if ((oldEnrolled && !newEnrolled) || (!oldEnrolled && newEnrolled) ||
-                (oldEnrolled && newEnrolled && (oldEnrolled.studentCount !== newEnrolled.studentCount || oldEnrolled.isShared !== newEnrolled.isShared))) {
-
-                const year = card.previousElementSibling?.classList.contains('en-year-header') ? card.previousElementSibling.innerText : '';
-                const subEscaped = subjectName.replace(/'/g, "\\'");
-                let newHtml = `
-                    <div class="en-card ${newEnrolled ? 'enrolled' : ''}" data-subject="${subjectName}">
-                        <div class="en-card-body">
-                            <div style="flex:1;">
-                                <div class="en-subject-title">${subjectName}</div>
-                                ${newEnrolled ? `
-                                    <div class="en-badges">
-                                        <span class="en-badge en-badge-success"><i class="fa-solid fa-check-circle"></i> مسجلة</span>
-                                        <span class="en-badge en-badge-info"><i class="fa-solid fa-users"></i> ${newEnrolled.studentCount} طالب</span>
-                                        ${newEnrolled.isShared ? `<span class="en-badge en-badge-warning"><i class="fa-solid fa-share-nodes"></i> مشترك</span>` : ''}
-                                    </div>` : `
-                                    <span class="en-badge en-badge-neutral"><i class="fa-solid fa-minus-circle"></i> لم تُسجَّل بعد</span>`}
-                            </div>
-                            <div class="en-actions">
-                                <label class="en-btn ${newEnrolled ? 'en-btn-update' : 'en-btn-primary'}">
-                                    <i class="fa-solid fa-file-excel"></i>${newEnrolled ? 'تحديث' : 'رفع قائمة'}
-                                    <input type="file" accept=".xlsx,.xls" style="display:none;" onchange="handleSubjectExcelUpload(this,'${subEscaped}')">
-                                </label>
-                                ${isAdmin ? `
-                                    <label class="en-btn en-btn-admin">
-                                        <i class="fa-solid fa-globe"></i> رفع مشترك
-                                        <input type="file" accept=".xlsx,.xls" style="display:none;" onchange="handleAdminSharedExcelUpload(this,'${subEscaped}')">
-                                    </label>` : ''}
-                                ${newEnrolled ? `
-                                    <button class="en-btn en-btn-view" onclick="viewEnrolledStudents('${subEscaped}','${newEnrolled.docId}')">
-                                        <i class="fa-solid fa-eye"></i> عرض
-                                    </button>` : ''}
-                                ${isAdmin && newEnrolled ? `
-                                    <button class="en-btn en-btn-danger" onclick="adminDeleteEnrollment('${newEnrolled.docId}','${subEscaped}')">
-                                        <i class="fa-solid fa-trash"></i> حذف
-                                    </button>` : ''}
-                            </div>
-                        </div>
-                    </div>`;
-                card.outerHTML = newHtml;
-            }
-        });
-        cache.enrollmentMap.set(doctorUID, newMap);
-    };
 
     const fallbackTimer = setTimeout(async () => {
         if (firstLoad) {
