@@ -11,12 +11,16 @@ import {
 const db = window.db;
 const auth = window.auth;
 
-const cache = {
-    adminStatus: new Map(),          
-    collegeSubjects: new Map(),      
-    enrollmentMap: new Map(),         
-    listeners: new Set()              
+window.enrollmentCache = {
+    adminStatus: new Map(),
+    collegeSubjects: new Map(),
+    enrollmentMap: new Map(),
+    listeners: new Set(),
+    isInitialLoadDone: false // 🆕 إضافة دي عشان نعرف إننا حملنا الداتا قبل كدة
 };
+
+const cache = window.enrollmentCache; 
+
 
 (function injectStyles() {
     if (document.getElementById('enrollment-system-styles')) return;
@@ -55,6 +59,21 @@ const cache = {
     document.head.appendChild(style);
 })();
 
+window.preFetchEnrollments = async function () {
+    const user = auth.currentUser;
+    if (!user || window.enrollmentCache.isInitialLoadDone) return;
+
+    try {
+        const facSnap = await getDoc(doc(db, "faculty_members", user.uid));
+        if (facSnap.exists()) {
+            const { college, fullName = "" } = facSnap.data();
+            // تشغيل المستمع اللحظي فوراً في الخلفية
+            await attachRealtimeListener(college, user.uid, fullName);
+            window.enrollmentCache.isInitialLoadDone = true;
+            console.log("⚡ Enrollment Engine Started in Background");
+        }
+    } catch (e) { console.warn("Pre-fetch failed", e); }
+};
 async function getAdminStatus(uid) {
     if (cache.adminStatus.has(uid)) return cache.adminStatus.get(uid);
     try {
@@ -78,51 +97,98 @@ function getCollegeSubjects(college) {
 function detachAllListeners() {
     cache.listeners.forEach(unsub => unsub());
     cache.listeners.clear();
-    cache.enrollmentMap.clear();
 }
 
+/**
+ * دالة فتح نظام تسجيل المواد - نسخة السرعة القصوى (v3.1)
+ * المميزات: Instant UI، Zero Redundant Reads، Smart Caching
+ */
 window.openSubjectEnrollmentModal = async function () {
     const modal = document.getElementById('subjectEnrollmentModal');
     if (!modal) return;
+
+    // 1. إظهار المودال فوراً (تحسين تجربة المستخدم)
     modal.style.display = 'flex';
 
     const user = auth.currentUser;
     if (!user) {
         showToast?.("⚠️ يرجى تسجيل الدخول أولاً", 3000, "#f59e0b");
+        modal.style.display = 'none';
         return;
     }
 
-    const collegeSelector = document.getElementById('collegeSelectorSection');
     const container = document.getElementById('enrollmentListContainer');
+    const collegeSelector = document.getElementById('collegeSelectorSection');
+    const cache = window.enrollmentCache;
+
+    // 2. 🚀 [سرعة البرق] التحقق من الكاش العالمي أولاً
+    if (cache.isInitialLoadDone && cache.enrollmentMap.has(user.uid)) {
+        console.log("⚡ [Instant Load] Rendering from Memory Cache...");
+
+        const enrolledMap = cache.enrollmentMap.get(user.uid);
+        const isAdmin = cache.adminStatus.get(user.uid) || false;
+
+        // محاولة استعادة الكلية من الملف الشخصي المخزن لتجنب طلب Firebase
+        let college = "";
+        const cachedProfile = localStorage.getItem('cached_profile_data');
+        if (cachedProfile) {
+            college = JSON.parse(cachedProfile).college;
+        }
+
+        if (college) {
+            if (collegeSelector) collegeSelector.style.display = 'none';
+            // رندر القائمة فوراً من الذاكرة
+            renderFullList(container, college, user.uid, enrolledMap, isAdmin);
+
+            // تحديث خفي في الخلفية للتأكد من اتصال الـ Snapshots
+            if (cache.listeners.size === 0) {
+                window.preFetchEnrollments?.();
+            }
+            return; // اخرج من الدالة هنا لأن المهمة تمت بنجاح وبسرعة 0 ثانية
+        }
+    }
+
+    // 3. [حالة الانتظار] إذا لم تكن البيانات جاهزة في الكاش
     if (collegeSelector) collegeSelector.style.display = 'none';
-    if (container) container.innerHTML = loadingHTML("جاري التحقق من بياناتك...");
+    container.innerHTML = loadingHTML("جاري مزامنة المواد المسجلة...");
 
     try {
+        // جلب بيانات الدكتور الأساسية
         const facSnap = await getDoc(doc(db, "faculty_members", user.uid));
+
         if (!facSnap.exists()) {
             showToast?.("❌ لم يتم العثور على بيانات حسابك", 3000, "#ef4444");
             modal.style.display = 'none';
             return;
         }
 
-        const { college, fullName = "" } = facSnap.data();
+        const data = facSnap.data();
+        const college = data.college;
+        const fullName = data.fullName || "";
+        const isAdmin = data.isAdminDoctor === true;
+
+        // تحديث الكاش
+        cache.adminStatus.set(user.uid, isAdmin);
 
         if (!college) {
+            // إذا كان مستخدم جديد ولم يحدد كليته بعد
             if (collegeSelector) collegeSelector.style.display = 'block';
-            if (container) container.innerHTML = '';
+            container.innerHTML = `<div class="en-empty">يرجى اختيار الكلية لبدء إدارة المواد</div>`;
         } else {
+            // ربط المستمع اللحظي (سيقوم بعمل Render تلقائياً فور وصول البيانات)
             await attachRealtimeListener(college, user.uid, fullName);
+            cache.isInitialLoadDone = true;
         }
     } catch (e) {
-        console.error("openSubjectEnrollmentModal:", e);
-        if (container) container.innerHTML = errorHTML("خطأ في تحميل البيانات");
+        console.error("Critical Error in Enrollment Open:", e);
+        container.innerHTML = errorHTML("عذراً، فشل تحميل البيانات. تأكد من جودة الإنترنت.");
     }
 };
 
 window.closeSubjectEnrollmentModal = function () {
     const modal = document.getElementById('subjectEnrollmentModal');
     if (modal) modal.style.display = 'none';
-    detachAllListeners();
+    
 };
 
 window.closeEnrolledStudentsModal = function () {
@@ -416,7 +482,7 @@ window.handleSubjectExcelUpload = async function (input, subjectName) {
     if (!user) return showToast?.("⚠️ يجب تسجيل الدخول أولاً", 3000, "#f59e0b");
 
     showToast?.("⏳ جاري قراءة الملف...", 2000, "#7c3aed");
-    await new Promise(r => setTimeout(r, 100)); 
+    await new Promise(r => setTimeout(r, 100));
 
     try {
         const students = await parseExcel(file);
