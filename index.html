@@ -3837,7 +3837,10 @@
         <div class="theory-body">
             <div class="theory-input-group">
                 <label><i class="fa-solid fa-book-open"></i> 1. Select Subject:</label>
-                <select id="theorySubjectSelect" class="v2-input-field">
+                <input type="text" id="theorySubjectSearch" placeholder="🔍 ابحث..." class="v2-input-field"
+                    style="margin-bottom:6px;" oninput="filterTheorySubjects(this.value)" autocomplete="off">
+
+                <select id="theorySubjectSelect" class="v2-input-field" size="4" style="height:auto; min-height:100px;">
                 </select>
             </div>
 
