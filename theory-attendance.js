@@ -2,8 +2,6 @@ import {
     collection, query, where, getDocs, doc, getDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-
-
 const _theoryCache = {
     uid: null,
     subjects: null,
@@ -16,14 +14,10 @@ window.clearTheoryAttendanceCache = function () {
 };
 
 async function _loadTheoryCache(user) {
-    if (_theoryCache.uid === user.uid && _theoryCache.subjects instanceof Set) return;
-
     const db = window.db;
 
-    const [facSnap, ownSnap] = await Promise.all([
-        getDoc(doc(db, 'faculty_members', user.uid)),
-        getDocs(query(collection(db, 'subject_enrollments'), where('doctorUID', '==', user.uid)))
-    ]);
+    // جيب بيانات الدكتور أولاً عشان تعرف الكلية الصح
+    const facSnap = await getDoc(doc(db, 'faculty_members', user.uid));
 
     _theoryCache.collegeCode = 'NURS';
     _theoryCache.doctorName = user.displayName || user.email || 'Unknown Lecturer';
@@ -34,14 +28,16 @@ async function _loadTheoryCache(user) {
         if (fd.name || fd.fullName) _theoryCache.doctorName = fd.name || fd.fullName;
     }
 
+    // بعدين جيب المواد الشخصية والمشتركة بالكلية الصح
+    const [ownSnap, sharedSnap] = await Promise.all([
+        getDocs(query(collection(db, 'subject_enrollments'), where('doctorUID', '==', user.uid))),
+        getDocs(query(collection(db, 'subject_enrollments'),
+            where('sharedWithAll', '==', true),
+            where('college', '==', _theoryCache.collegeCode)))
+    ]);
+
     const subjects = new Set();
     ownSnap.forEach(d => { if (d.data().subjectName) subjects.add(d.data().subjectName); });
-
-    const sharedSnap = await getDocs(query(
-        collection(db, 'subject_enrollments'),
-        where('sharedWithAll', '==', true),
-        where('college', '==', _theoryCache.collegeCode)
-    ));
     sharedSnap.forEach(d => { if (d.data().subjectName) subjects.add(d.data().subjectName); });
 
     _theoryCache.uid = user.uid;
@@ -90,19 +86,48 @@ function styleCell(cell, {
     if (border) applyBorder(cell);
 }
 
+// ─── بار البحث الذكي ───
+window._theorySubjectsList = [];
+
+window.filterTheorySubjects = function (searchQuery) {
+    const select = document.getElementById('theorySubjectSelect');
+    if (!select) return;
+
+    const normalizedQuery = searchQuery.trim().toLowerCase()
+        .replace(/أ|إ|آ/g, 'ا')
+        .replace(/ة/g, 'ه')
+        .replace(/ى/g, 'ي');
+
+    for (let i = 0; i < select.options.length; i++) {
+        const optText = select.options[i].text.toLowerCase()
+            .replace(/أ|إ|آ/g, 'ا')
+            .replace(/ة/g, 'ه')
+            .replace(/ى/g, 'ي');
+
+        select.options[i].style.display =
+            (normalizedQuery === '' || optText.includes(normalizedQuery)) ? '' : 'none';
+    }
+};
+
+// ─── فتح المودال ───
 window.openTheoryAttendanceModal = async function () {
+    _theoryCache.uid = null; // force refresh كل مرة
+
     const modal = document.getElementById('theoryAttendanceModal');
     const select = document.getElementById('theorySubjectSelect');
+    const searchInput = document.getElementById('theorySubjectSearch');
     const dateInput = document.getElementById('theoryDateInput');
+
     if (!modal || !select || !dateInput) return;
 
     dateInput.valueAsDate = new Date();
-    select.innerHTML = '<option value="" disabled selected>Loading subjects...</option>';
+    select.innerHTML = '<option value="" disabled selected>⏳ Loading...</option>';
     select.disabled = true;
+    if (searchInput) searchInput.value = '';
     modal.style.display = 'flex';
 
     if (!window.auth || !window.db) {
-        select.innerHTML = '<option value="" disabled>System initializing...</option>';
+        select.innerHTML = '<option value="" disabled>⚠️ System initializing...</option>';
         window.showToast?.('⚠️ النظام قيد التهيئة، يرجى المحاولة بعد ثواني', 3000, '#f59e0b');
         select.disabled = false;
         return;
@@ -117,6 +142,7 @@ window.openTheoryAttendanceModal = async function () {
 
     try {
         await _loadTheoryCache(user);
+
         select.innerHTML = '<option value="" disabled selected>-- Select Subject --</option>';
 
         if (_theoryCache.subjects.size === 0) {
@@ -124,28 +150,38 @@ window.openTheoryAttendanceModal = async function () {
             return;
         }
 
-        const fragment = document.createDocumentFragment();
-        _theoryCache.subjects.forEach(sub => {
+        // ترتيب المواد أبجدياً
+        const sortedSubjects = [..._theoryCache.subjects].sort((a, b) =>
+            a.localeCompare(b, 'ar')
+        );
+
+        window._theorySubjectsList = sortedSubjects;
+
+        sortedSubjects.forEach(sub => {
             const opt = document.createElement('option');
-            opt.value = opt.textContent = sub;
-            fragment.appendChild(opt);
+            opt.value = sub;
+            opt.textContent = sub;
+            select.appendChild(opt);
         });
-        select.appendChild(fragment);
 
     } catch (e) {
         console.error('Error loading subjects:', e);
-        select.innerHTML = '<option value="" disabled>Error loading subjects</option>';
+        select.innerHTML = '<option value="" disabled>❌ Error loading subjects</option>';
     } finally {
         select.disabled = false;
     }
 };
 
+// ─── توليد التقرير ───
 window.generateTheoryReport = async function () {
     const subject = document.getElementById('theorySubjectSelect')?.value;
     const rawDate = document.getElementById('theoryDateInput')?.value;
-    const btn = document.querySelector('#theoryAttendanceModal .btn-main');
+    const btn = document.querySelector('#theoryAttendanceModal .theory-download-btn');
 
-    if (!subject || !rawDate) return showToast?.('⚠️ Please select a subject and date', 3000, '#f59e0b');
+    if (!subject || !rawDate) {
+        window.showToast?.('⚠️ Please select a subject and date', 3000, '#f59e0b');
+        return;
+    }
 
     const [yyyy, mm, dd] = rawDate.split('-');
     const dateStr = `${dd}/${mm}/${yyyy}`;
@@ -178,7 +214,12 @@ window.generateTheoryReport = async function () {
         if (!enrollSnap.empty) {
             enrollSnap.forEach(d => { if (Array.isArray(d.data().students)) masterStudents.push(...d.data().students); });
         } else {
-            const sharedSnap = await getDocs(query(collection(db, 'subject_enrollments'), where('sharedWithAll', '==', true), where('subjectName', '==', subject), where('college', '==', collegeCode)));
+            const sharedSnap = await getDocs(query(
+                collection(db, 'subject_enrollments'),
+                where('sharedWithAll', '==', true),
+                where('subjectName', '==', subject),
+                where('college', '==', collegeCode)
+            ));
             if (sharedSnap.empty) throw new Error('No enrolled student list found for this subject.');
             sharedSnap.forEach(d => { if (Array.isArray(d.data().students)) masterStudents.push(...d.data().students); });
         }
@@ -223,8 +264,9 @@ window.generateTheoryReport = async function () {
             }
         });
 
+        // ✅ ترتيب تصاعدي بالـ ID
         const rows = Array.from(studentMap.values())
-            .sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }))
+            .sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true, sensitivity: 'base' }))
             .map((r, i) => ({ no: i + 1, ...r }));
 
         let totalPresent = 0, totalAbsent = 0, totalExtra = 0;
@@ -283,6 +325,18 @@ window.generateTheoryReport = async function () {
             styleCell(cell, { bgColor: COLORS.blueBg, fontColor: COLORS.blueText, bold: true, size: 11 });
         });
 
+        ws.columns = [
+            { width: 6 },  // #
+            { width: 35 }, // Student Name
+            { width: 16 }, // University ID
+            { width: 12 }, // Group
+            { width: 14 }, // Status
+            { width: 20 }, // Behavior
+            { width: 14 }, // Check-in Time
+            { width: 16 }, // Record Type
+            { width: 16 }, // Total Absences
+        ];
+
         rows.forEach((r, idx) => {
             const rowNum = idx + 6;
             let bg = COLORS.presentBg, fg = COLORS.presentText;
@@ -290,7 +344,8 @@ window.generateTheoryReport = async function () {
             if (r.status === '❌ Absent') { bg = COLORS.absentBg; fg = COLORS.absentText; }
             else if (r.status.includes('Extra')) { bg = COLORS.extraBg; fg = COLORS.extraText; }
 
-            ws.getRow(rowNum).height = 22;[r.no, r.name, r.id, r.group, r.status, r.behavior, r.time, r.type, r.absences]
+            ws.getRow(rowNum).height = 22;
+            [r.no, r.name, r.id, r.group, r.status, r.behavior, r.time, r.type, r.absences]
                 .forEach((v, ci) => {
                     const cell = ws.getCell(rowNum, ci + 1);
                     cell.value = v;
@@ -304,7 +359,9 @@ window.generateTheoryReport = async function () {
 
         const sumLbl = ws.getCell(sumRow, 1);
         sumLbl.value = 'SUMMARY';
-        styleCell(sumLbl, { bgColor: COLORS.navyBg, fontColor: COLORS.navyText, bold: true, size: 11 });[
+        styleCell(sumLbl, { bgColor: COLORS.navyBg, fontColor: COLORS.navyText, bold: true, size: 11 });
+
+        [
             { col: 3, span: 2, value: `✅  Present: ${totalPresent}`, bg: COLORS.presentBg, fg: COLORS.presentText },
             { col: 5, span: 2, value: `❌  Absent:  ${totalAbsent}`, bg: COLORS.absentBg, fg: COLORS.absentText },
             { col: 7, span: 1, value: `⚠️  Extra:  ${totalExtra}`, bg: COLORS.extraBg, fg: COLORS.extraText },
@@ -315,7 +372,6 @@ window.generateTheoryReport = async function () {
             cell.value = value;
             styleCell(cell, { bgColor: bg, fontColor: fg, bold: true, size: 11 });
         });
-
 
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -340,4 +396,4 @@ window.generateTheoryReport = async function () {
     }
 };
 
-console.log("✅ Theory Attendance Module Loaded (100% Optimized)");
+console.log("✅ Theory Attendance Module Loaded (v4.0 - Smart Search + Sorted by ID)");
