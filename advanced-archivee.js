@@ -7,8 +7,30 @@ import {
     where
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-const db = window.db;
-const auth = window.auth;
+window.ARCHIVE_SETUP_CACHE = {
+    subjects: [],
+    isReady: false
+};
+
+
+window.preFetchArchiveData = async function () {
+    const user = window.auth?.currentUser;
+    if (!user || window.ARCHIVE_SETUP_CACHE.isReady) return;
+
+    try {
+        let subjects = new Set();
+        if (window.enrollmentCache && window.enrollmentCache.enrollmentMap.size > 0) {
+            window.enrollmentCache.enrollmentMap.forEach((val, key) => subjects.add(key.trim()));
+        } else {
+            const q = query(collection(window.db, "subject_enrollments"), where("doctorUID", "==", user.uid));
+            const snap = await getDocs(q);
+            snap.forEach(d => { if (d.data().subjectName) subjects.add(d.data().subjectName.trim()); });
+        }
+        window.ARCHIVE_SETUP_CACHE.subjects = [...subjects].sort();
+        window.ARCHIVE_SETUP_CACHE.isReady = true;
+        console.log("📊 Archive Cache Ready");
+    } catch (e) { console.warn("Archive Fetch Error", e); }
+};
 
 
 window.openAdvancedArchiveModal = async function () {
@@ -134,36 +156,46 @@ window.openAdvancedArchiveModal = async function () {
         subjects = [...new Set(window.cachedReportData.map(r => r.subject.trim()))];
     }
 
+    if (window.ARCHIVE_SETUP_CACHE && window.ARCHIVE_SETUP_CACHE.isReady) {
+        subjects = window.ARCHIVE_SETUP_CACHE.subjects;
+    }
+
     if (subjects.length === 0) {
         try {
-            const user = auth.currentUser;
+            const user = window.auth?.currentUser;
             if (user) {
-                const qEnroll = query(
-                    collection(db, "subject_enrollments"),
-                    where("doctorUID", "==", user.uid)
-                );
-                const snap = await getDocs(qEnroll);
-                snap.forEach(d => {
+                const enrollmentsRef = collection(window.db, "subject_enrollments");
+
+                const [personalSnap, facSnap] = await Promise.all([
+                    getDocs(query(enrollmentsRef, where("doctorUID", "==", user.uid))),
+                    getDoc(doc(window.db, "faculty_members", user.uid))
+                ]);
+
+                personalSnap.forEach(d => {
                     const s = d.data().subjectName;
                     if (s) subjects.push(s);
                 });
-                const facSnap = await getDoc(doc(db, "faculty_members", user.uid));
+
                 const college = facSnap.exists() ? (facSnap.data().college || "") : "";
+
                 if (college) {
                     const qShared = query(
-                        collection(db, "subject_enrollments"),
+                        enrollmentsRef,
                         where("sharedWithAll", "==", true),
                         where("college", "==", college)
                     );
                     const sharedSnap = await getDocs(qShared);
                     sharedSnap.forEach(d => {
                         const s = d.data().subjectName;
-                        if (s && !subjects.includes(s)) subjects.push(s); // بدون تكرار
+                        if (s && !subjects.includes(s)) subjects.push(s);
                     });
                 }
+
+                window.ARCHIVE_SETUP_CACHE.subjects = subjects.sort();
+                window.ARCHIVE_SETUP_CACHE.isReady = true;
             }
         } catch (e) {
-            console.warn("Could not fetch subjects:", e);
+            console.warn("⚠️ Failed to fetch archive subjects:", e);
         }
     }
 
@@ -183,6 +215,10 @@ window.openAdvancedArchiveModal = async function () {
 };
 
 window.generateArchiveReport = async function () {
+
+    const auth = window.auth; 
+    const db = window.db;     
+
     const modal = document.getElementById('advancedArchiveModalV2');
 
     const subjectName = modal.querySelector('#archSubjectSelect').value;
@@ -226,7 +262,7 @@ window.generateArchiveReport = async function () {
         window.showToast("⏳ Fetching data...", 3000, "#0ea5e9");
 
     try {
-        const user = auth.currentUser;
+        const user = window.auth?.currentUser;
         if (!user) throw new Error("Not authenticated");
 
         const facSnap = await getDoc(doc(db, "faculty_members", user.uid));
@@ -253,7 +289,7 @@ window.generateArchiveReport = async function () {
         for (let i = 0; i < datesList.length; i += CHUNK_SIZE) {
             const chunk = datesList.slice(i, i + CHUNK_SIZE);
             const q = query(
-                collection(db, collectionName),
+                collection(window.db, collectionName),
                 where("subject", "==", subjectName),
                 where("doctorUID", "==", user.uid),
                 where("date", "in", chunk)
