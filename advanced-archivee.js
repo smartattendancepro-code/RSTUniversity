@@ -12,26 +12,53 @@ window.ARCHIVE_SETUP_CACHE = {
     isReady: false
 };
 
-
 window.preFetchArchiveData = async function () {
     const user = window.auth?.currentUser;
     if (!user || window.ARCHIVE_SETUP_CACHE.isReady) return;
 
     try {
+        const facSnap = await getDoc(doc(window.db, "faculty_members", user.uid));
+        const college = facSnap.exists() ? facSnap.data().college : "";
+
+        const enrollmentsRef = collection(window.db, "subject_enrollments");
+
+        const [personalSnap, sharedSnap] = await Promise.all([
+            getDocs(query(enrollmentsRef, where("doctorUID", "==", user.uid))),
+            college
+                ? getDocs(query(enrollmentsRef, where("sharedWithAll", "==", true), where("college", "==", college)))
+                : Promise.resolve({ forEach: () => { } })
+        ]);
+
         let subjects = new Set();
-        if (window.enrollmentCache && window.enrollmentCache.enrollmentMap.size > 0) {
-            window.enrollmentCache.enrollmentMap.forEach((val, key) => subjects.add(key.trim()));
-        } else {
-            const q = query(collection(window.db, "subject_enrollments"), where("doctorUID", "==", user.uid));
-            const snap = await getDocs(q);
-            snap.forEach(d => { if (d.data().subjectName) subjects.add(d.data().subjectName.trim()); });
-        }
-        window.ARCHIVE_SETUP_CACHE.subjects = [...subjects].sort();
+        personalSnap.forEach(d => { if (d.data().subjectName) subjects.add(d.data().subjectName.trim()); });
+        sharedSnap.forEach(d => { if (d.data().subjectName) subjects.add(d.data().subjectName.trim()); });
+
+        window.ARCHIVE_SETUP_CACHE.subjects = [...subjects].sort((a, b) => a.localeCompare(b, 'ar'));
         window.ARCHIVE_SETUP_CACHE.isReady = true;
-        console.log("📊 Archive Cache Ready");
+        console.log("📊 Archive Cache Ready:", window.ARCHIVE_SETUP_CACHE.subjects.length, "subjects");
     } catch (e) { console.warn("Archive Fetch Error", e); }
 };
 
+// ─── بار البحث الذكي ───
+window._archiveSubjectsList = [];
+
+window.filterArchiveSubjects = function (searchQuery) {
+    const select = document.getElementById('archSubjectSelect');
+    if (!select) return;
+
+    const normalized = (str) => str.toLowerCase()
+        .replace(/أ|إ|آ/g, 'ا')
+        .replace(/ة/g, 'ه')
+        .replace(/ى/g, 'ي');
+
+    const q = normalized(searchQuery.trim());
+
+    for (let i = 0; i < select.options.length; i++) {
+        const optText = normalized(select.options[i].text);
+        select.options[i].style.display =
+            (q === '' || optText.includes(q)) ? '' : 'none';
+    }
+};
 
 window.openAdvancedArchiveModal = async function () {
     if (typeof window.playClick === 'function') window.playClick();
@@ -87,13 +114,24 @@ window.openAdvancedArchiveModal = async function () {
                                   margin-bottom:6px; text-transform:uppercase; letter-spacing:0.5px;">
                         📚 Subject
                     </label>
+
+                    <input type="text" id="archSubjectSearch"
+                        placeholder="🔍 ابحث عن المادة..."
+                        style="width:100%; padding:10px 14px; border:1.5px solid #e2e8f0;
+                               border-radius:12px 12px 0 0; font-size:13px; font-family:inherit;
+                               background:#f0f9ff; color:#0f172a; outline:none;
+                               box-sizing:border-box; border-bottom:1px solid #e2e8f0;"
+                        oninput="filterArchiveSubjects(this.value)"
+                        autocomplete="off">
+
                     <select id="archSubjectSelect" style="
-                        width:100%; padding:12px 14px; border:1.5px solid #e2e8f0;
-                        border-radius:12px; font-size:14px; font-family:inherit;
+                        width:100%; padding:8px 14px; border:1.5px solid #e2e8f0;
+                        border-top:none; border-radius:0 0 12px 12px;
+                        font-size:13px; font-family:inherit;
                         background:#f8fafc; color:#0f172a; outline:none;
-                        cursor:pointer; box-sizing:border-box;
-                    ">
-                        <option value="" disabled selected>-- Select Subject --</option>
+                        cursor:pointer; box-sizing:border-box; min-height:110px;
+                    " size="5">
+                        <option value="" disabled selected>⏳ Loading subjects...</option>
                     </select>
                 </div>
 
@@ -148,13 +186,15 @@ window.openAdvancedArchiveModal = async function () {
     }
 
     const select = modal.querySelector('#archSubjectSelect');
-    select.innerHTML = '<option value="" disabled selected>-- Select Subject --</option>';
+    const searchInput = modal.querySelector('#archSubjectSearch');
+
+    select.innerHTML = '<option value="" disabled selected>⏳ Loading subjects...</option>';
+    if (searchInput) searchInput.value = '';
+
+    window.ARCHIVE_SETUP_CACHE.isReady = false;
+    await window.preFetchArchiveData();
 
     let subjects = [];
-
-    if (window.cachedReportData && window.cachedReportData.length > 0) {
-        subjects = [...new Set(window.cachedReportData.map(r => r.subject.trim()))];
-    }
 
     if (window.ARCHIVE_SETUP_CACHE && window.ARCHIVE_SETUP_CACHE.isReady) {
         subjects = window.ARCHIVE_SETUP_CACHE.subjects;
@@ -165,7 +205,6 @@ window.openAdvancedArchiveModal = async function () {
             const user = window.auth?.currentUser;
             if (user) {
                 const enrollmentsRef = collection(window.db, "subject_enrollments");
-
                 const [personalSnap, facSnap] = await Promise.all([
                     getDocs(query(enrollmentsRef, where("doctorUID", "==", user.uid))),
                     getDoc(doc(window.db, "faculty_members", user.uid))
@@ -177,21 +216,19 @@ window.openAdvancedArchiveModal = async function () {
                 });
 
                 const college = facSnap.exists() ? (facSnap.data().college || "") : "";
-
                 if (college) {
-                    const qShared = query(
+                    const sharedSnap = await getDocs(query(
                         enrollmentsRef,
                         where("sharedWithAll", "==", true),
                         where("college", "==", college)
-                    );
-                    const sharedSnap = await getDocs(qShared);
+                    ));
                     sharedSnap.forEach(d => {
                         const s = d.data().subjectName;
                         if (s && !subjects.includes(s)) subjects.push(s);
                     });
                 }
 
-                window.ARCHIVE_SETUP_CACHE.subjects = subjects.sort();
+                window.ARCHIVE_SETUP_CACHE.subjects = subjects.sort((a, b) => a.localeCompare(b, 'ar'));
                 window.ARCHIVE_SETUP_CACHE.isReady = true;
             }
         } catch (e) {
@@ -199,12 +236,19 @@ window.openAdvancedArchiveModal = async function () {
         }
     }
 
-    subjects.sort().forEach(sub => {
-        const opt = document.createElement('option');
-        opt.value = sub;
-        opt.text = sub;
-        select.appendChild(opt);
-    });
+    select.innerHTML = '<option value="" disabled selected>-- Select Subject --</option>';
+
+    if (subjects.length === 0) {
+        select.innerHTML = '<option value="" disabled>⚠️ No subjects found</option>';
+    } else {
+        window._archiveSubjectsList = subjects;
+        subjects.forEach(sub => {
+            const opt = document.createElement('option');
+            opt.value = sub;
+            opt.text = sub;
+            select.appendChild(opt);
+        });
+    }
 
     const now = new Date();
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -216,9 +260,7 @@ window.openAdvancedArchiveModal = async function () {
 
 window.generateArchiveReport = async function () {
 
-    const auth = window.auth; 
-    const db = window.db;     
-
+    const db = window.db;
     const modal = document.getElementById('advancedArchiveModalV2');
 
     const subjectName = modal.querySelector('#archSubjectSelect').value;
@@ -271,7 +313,9 @@ window.generateArchiveReport = async function () {
         const facData = facSnap.data();
         const doctorCollege = facData.college || "NURS";
         const doctorName = facData.fullName || "Instructor";
-        const collectionName = `attendance_${doctorCollege}`;
+
+        // ✅ البحث في كل الكليات عشان نلاقي السجلات بغض النظر عن مكان التخزين
+        const ALL_COLLEGES = ["NURS", "PT", "PHARM", "DENT", "CS", "BA", "HS"];
 
         const datesList = [];
         const cursor = new Date(startObj);
@@ -288,14 +332,21 @@ window.generateArchiveReport = async function () {
 
         for (let i = 0; i < datesList.length; i += CHUNK_SIZE) {
             const chunk = datesList.slice(i, i + CHUNK_SIZE);
-            const q = query(
-                collection(window.db, collectionName),
-                where("subject", "==", subjectName),
-                where("doctorUID", "==", user.uid),
-                where("date", "in", chunk)
+
+            // ✅ بنبحث في كل الكليات في نفس الوقت
+            const promises = ALL_COLLEGES.map(college =>
+                getDocs(query(
+                    collection(window.db, `attendance_${college}`),
+                    where("subject", "==", subjectName),
+                    where("doctorUID", "==", user.uid),
+                    where("date", "in", chunk)
+                ))
             );
-            const snap = await getDocs(q);
-            snap.forEach(d => allRecords.push(d.data()));
+
+            const results = await Promise.all(promises);
+            results.forEach(snap => {
+                snap.forEach(d => allRecords.push(d.data()));
+            });
         }
 
         if (allRecords.length === 0) {
@@ -305,6 +356,8 @@ window.generateArchiveReport = async function () {
             btn.style.pointerEvents = 'auto';
             return;
         }
+
+        console.log(`✅ Found ${allRecords.length} records for "${subjectName}"`);
 
         let enrolledStudents = [];
         try {
@@ -391,8 +444,9 @@ window.generateArchiveReport = async function () {
             });
         });
 
+        // ✅ ترتيب تصاعدي بالـ ID
         const students = [...studentsMap.values()].sort((a, b) =>
-            String(a.id).localeCompare(String(b.id), undefined, { numeric: true })
+            String(a.id).localeCompare(String(b.id), undefined, { numeric: true, sensitivity: 'base' })
         );
 
         const totalLectures = lectures.length;
@@ -513,6 +567,7 @@ window.generateArchiveReport = async function () {
             }
         }
 
+        // ─── Summary Sheet ───
         const atRisk = students.filter(st => {
             const absent = lectures.filter(d => st.attendance[d] === "A").length;
             return totalLectures > 0 && (absent / totalLectures) > 0.25;
@@ -575,7 +630,7 @@ window.generateArchiveReport = async function () {
 
         if (typeof window.showToast === 'function')
             window.showToast(
-                `✅ Exported: ${totalStudents} students | ${totalLectures} lectures`,
+                `✅ Exported: ${totalStudents} students | ${totalLectures} lectures | ${atRisk.length} at risk`,
                 5000, "#10b981"
             );
 
@@ -590,3 +645,5 @@ window.generateArchiveReport = async function () {
         btn.style.pointerEvents = 'auto';
     }
 };
+
+console.log("✅ Advanced Archive v4.0 - Multi-College + Smart Search + Sorted by ID");
