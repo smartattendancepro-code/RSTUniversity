@@ -1430,7 +1430,8 @@ window.startLiveSnapshotListener = function () {
                     const trapB = sB.trap_report || { is_device_match: true, in_range: true };
 
                     const isRedA = (trapA.is_device_match === false) || (trapA.is_in_range === false);
-                    const isRedB = (trapB.is_device_match === false) || (trapA.is_in_range === false);
+                    const isRedB = (trapB.is_device_match === false) || (trapB.is_in_range === false);
+
 
                     if (isRedA && !isRedB) return -1;
                     if (!isRedA && isRedB) return 1;
@@ -1480,7 +1481,27 @@ window.startLiveSnapshotListener = function () {
                     const leaveIcon = isLeft ? 'fa-arrow-rotate-left' : 'fa-person-walking-arrow-right';
 
                     finalClassName = `live-st-card admin-view-card`;
-                    finalCSSText = `background: #ffffff; border-radius: 18px; border: ${borderStyle}; padding: 16px; display: flex; flex-direction: column; justify-content: space-between; gap: 5px; box-shadow: 0 4px 10px rgba(206, 99, 38, 0.03); height: auto; min-height: 220px; width: 100%; position: relative; overflow: visible !important; opacity: ${opacityVal}; transition: all 0.3s ease;`;
+                    const trapAlert = s.trap_report || {};
+                    const hasDeviceIssue = trapAlert.is_device_match === false;
+                    const hasRangeIssue = trapAlert.is_in_range === false;
+
+                    const cardBg = (hasDeviceIssue && hasRangeIssue)
+                        ? '#fff5f5'
+                        : hasDeviceIssue
+                            ? '#fff8f8'
+                            : hasRangeIssue
+                                ? '#fffbf0'
+                                : '#ffffff';
+
+                    const cardBorder = (hasDeviceIssue && hasRangeIssue)
+                        ? '2px solid #ef4444'
+                        : hasDeviceIssue
+                            ? '2px solid #fca5a5'
+                            : hasRangeIssue
+                                ? '2px solid #fcd34d'
+                                : borderStyle;
+
+                    finalCSSText = `background: ${cardBg}; border-radius: 18px; border: ${cardBorder}; padding: 16px; display: flex; flex-direction: column; justify-content: space-between; gap: 5px; box-shadow: 0 4px 10px rgba(206, 99, 38, 0.03); height: auto; min-height: 220px; width: 100%; position: relative; overflow: visible !important; opacity: ${opacityVal}; transition: all 0.3s ease;`;
 
                     finalInnerHTML = `
                             ${countBadge}
