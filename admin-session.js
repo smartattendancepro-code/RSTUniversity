@@ -1133,7 +1133,7 @@ window.openDoorActionModal = function () {
             <div class="time-grid">
     <button onclick="confirmOpenDoor(15)" class="btn-time-opt">15 ${lblSec}</button>
     <button onclick="confirmOpenDoor(25)" class="btn-time-opt">25 ${lblSec}</button>
-    <button onclick="confirmOpenDoor(35)" class="btn-time-opt">35 ${lblSec}</button>
+    <button onclick="confirmOpenDoor(35)" class="btn-time-opt" style="background:#fef2f2; color:#b91c1c; border-color:#fca5a5;">35 ${lblSec} ⚠️</button>
     <button onclick="confirmOpenDoor(45)" class="btn-time-opt" style="background:#fef2f2; color:#b91c1c; border-color:#fca5a5;">45 ${lblSec} ⚠️</button>
 </div>
             
