@@ -7,7 +7,7 @@ import { SmartHistory } from './SmartHistory.js';
 import {
     doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, where, getDocs,
     onSnapshot, serverTimestamp, increment, writeBatch, orderBy, limit,
-    arrayUnion, arrayRemove, getCountFromServer
+    arrayUnion, arrayRemove, getCountFromServer, enableNetwork, disableNetwork
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { i18n } from './i18n.js';
 import { applyVipTheme } from './VipThemeManager.js';
@@ -784,6 +784,130 @@ window.closeSessionImmediately = function () {
             btn.style.pointerEvents = s.pointer;
             btn.style.opacity = s.opacity;
             btn.disabled = s.pointer === 'none';
+        }
+    }
+};
+
+// ════════════════════════════════════════════════════════
+// 🚨 زر الحفظ الطارئ - نسخة احترافية مدمجة
+// ════════════════════════════════════════════════════════
+window.emergencyCloseSession = async function () {
+    const lang = localStorage.getItem('sys_lang') || 'ar';
+    const t = (ar, en) => lang === 'ar' ? ar : en;
+
+    const user = window.auth?.currentUser;
+    if (!user) {
+        showToast(t("يجب تسجيل الدخول أولاً", "Please sign in first"), 3000, "#ef4444");
+        return;
+    }
+
+    if (window._emergencyClosing) return;
+
+    // طلب تأكيد قبل التنفيذ
+    showModernConfirm(
+        t("⚡ حفظ طوارئ نهائي", "⚡ Final Emergency Save"),
+        t("سيتم الحفظ فوراً وتجاوز أي تعليق في النظام. هل أنت متأكد؟", "System will save immediately and bypass any lag. Proceed?"),
+        _runEmergencyClose
+    );
+
+    async function _runEmergencyClose() {
+        window._emergencyClosing = true;
+        const btn = document.getElementById('btnEmergencyClose');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+        }
+
+        try {
+            // استخدام db المعرف عالمياً في ملفك
+            const sessionRef = doc(db, "active_sessions", user.uid);
+            const sessionSnap = await getDoc(sessionRef);
+
+            if (!sessionSnap.exists() || !sessionSnap.data().isActive) {
+                showToast(t("⚠️ لا توجد جلسة نشطة", "⚠️ No active session"), 3000, "#f59e0b");
+                return;
+            }
+
+            const settings = sessionSnap.data();
+            const now = new Date();
+            const d = String(now.getDate()).padStart(2, '0');
+            const m = String(now.getMonth() + 1).padStart(2, '0');
+            const y = now.getFullYear();
+            const fixedDateStr = `${d}/${m}/${y}`;
+            const dateKey = `${d}-${m}-${y}`;
+            const closeTimeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+            const rawSubject = settings.allowedSubject || "General";
+            const cleanSubKey = rawSubject.trim().replace(/\s+/g, '_').replace(/[^\w\u0600-\u06FF]/g, '');
+            const college = settings.college || "NURS";
+            const targetGroups = settings.targetGroups?.length ? settings.targetGroups : ["General"];
+            const hall = settings.hall || "";
+            const doctorName = settings.doctorName || "Doctor";
+
+            // جلب المشاركين
+            const partsSnap = await getDocs(collection(db, "active_sessions", user.uid, "participants"));
+            const attended = partsSnap.docs
+                .map(doc => ({ id: doc.id, ref: doc.ref, ...doc.data() }))
+                .filter(p => p.status === 'active' || p.status === 'on_break');
+
+            // جلب الغائبين
+            let absentStudents = [];
+            if (settings.enrollmentDocId) {
+                try {
+                    const enrollSnap = await getDoc(doc(db, "subject_enrollments", settings.enrollmentDocId));
+                    if (enrollSnap.exists()) {
+                        const attendedIds = new Set(attended.map(p => p.id));
+                        absentStudents = (enrollSnap.data().students || []).filter(s => !attendedIds.has(s.id));
+                    }
+                } catch (e) { console.log("Absentees fetch skipped"); }
+            }
+
+            const batch = writeBatch(db);
+
+            // 1. حفظ الحاضرين
+            attended.forEach(p => {
+                const recID = `${p.id}_${dateKey}_${cleanSubKey}`;
+                const payload = {
+                    id: p.id, name: p.name, subject: rawSubject, college, hall,
+                    group: p.group || targetGroups[0], date: fixedDateStr,
+                    time_str: p.time_str || closeTimeStr, segment_count: p.segment_count || 1,
+                    notes: p.isUnruly ? "غير منضبط" : (p.isUniformViolation ? "مخالفة زي" : "منضبط"),
+                    timestamp: serverTimestamp(), status: "ATTENDED",
+                    doctorUID: user.uid, doctorName, feedback_status: "pending", feedback_rating: 0
+                };
+                batch.set(doc(db, `attendance_${college}`, recID), payload);
+                batch.set(doc(db, "attendance", recID), payload);
+                batch.delete(p.ref);
+            });
+
+            // 2. حفظ الغائبين
+            absentStudents.forEach(student => {
+                const absentID = `${student.id}_${dateKey}_${cleanSubKey}_ABSENT`;
+                batch.set(doc(db, `attendance_${college}`, absentID), {
+                    id: student.id, name: student.name, subject: rawSubject,
+                    college, hall, group: student.group || targetGroups[0],
+                    date: fixedDateStr, time_str: "--:--", notes: "غائب",
+                    timestamp: serverTimestamp(), status: "ABSENT",
+                    doctorUID: user.uid, doctorName
+                });
+            });
+
+            // 3. إغلاق الجلسة
+            batch.update(sessionRef, { isActive: false, isDoorOpen: false });
+
+            await batch.commit();
+            showToast(`✅ ${t('تم الحفظ الطارئ', 'Emergency Save Done')}`, 4000, "#10b981");
+            setTimeout(() => location.reload(), 1500);
+
+        } catch (e) {
+            console.error(e);
+            showToast("❌ Error: " + e.message, 5000, "#ef4444");
+        } finally {
+            window._emergencyClosing = false;
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '🚨 طوارئ';
+            }
         }
     }
 };
