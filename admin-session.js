@@ -1006,7 +1006,7 @@ window.openDoorActionModal = function () {
             .modern-door-container { font-family: inherit; text-align: center; }
             
             /* تنسيق شبكة الوقت الجديد (4 أعمدة) */
-            .time-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
+            .time-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 10px; }
             
             .btn-time-opt {
                 padding: 10px 2px; background: #fff; color: #334155; 
@@ -1131,16 +1131,11 @@ window.openDoorActionModal = function () {
             </label>
             
             <div class="time-grid">
-                <button onclick="confirmOpenDoor(10)" class="btn-time-opt">10 ${lblSec}</button>
-                <button onclick="confirmOpenDoor(15)" class="btn-time-opt">15 ${lblSec}</button>
-                <button onclick="confirmOpenDoor(20)" class="btn-time-opt">20 ${lblSec}</button>
-                <button onclick="confirmOpenDoor(35)" class="btn-time-opt">35 ${lblSec}</button>
-                
-                <button onclick="confirmOpenDoor(44)" class="btn-time-opt">44 ${lblSec}</button>
-                <button onclick="confirmOpenDoor(60)" class="btn-time-opt">1 ${lblMin}</button>
-                <button onclick="confirmOpenDoor(120)" class="btn-time-opt">2 ${lblMin}</button>
-                <button onclick="confirmOpenDoor(180)" class="btn-time-opt">3 ${lblMin}</button>
-            </div>
+    <button onclick="confirmOpenDoor(15)" class="btn-time-opt">15 ${lblSec}</button>
+    <button onclick="confirmOpenDoor(25)" class="btn-time-opt">25 ${lblSec}</button>
+    <button onclick="confirmOpenDoor(35)" class="btn-time-opt">35 ${lblSec}</button>
+    <button onclick="confirmOpenDoor(45)" class="btn-time-opt" style="background:#fef2f2; color:#b91c1c; border-color:#fca5a5;">45 ${lblSec} ⚠️</button>
+</div>
             
             <!-- زر الوقت المفتوح -->
             <button onclick="confirmOpenDoor(-1)" class="btn-infinity">
