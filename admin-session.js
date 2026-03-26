@@ -7,7 +7,7 @@ import { SmartHistory } from './SmartHistory.js';
 import {
     doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, where, getDocs,
     onSnapshot, serverTimestamp, increment, writeBatch, orderBy, limit,
-    arrayUnion, arrayRemove, getCountFromServer, enableNetwork, disableNetwork
+    arrayUnion, arrayRemove, getCountFromServer
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { i18n } from './i18n.js';
 import { applyVipTheme } from './VipThemeManager.js';
@@ -65,7 +65,6 @@ let unsubscribeLiveSnapshot = null;
 let deanRadarUnsubscribe = null;
 let unsubscribeHeaderSession = null;
 
-// 1. مخزن البيانات الذكي (Global Cache)
 window.LECTURE_SETUP_CACHE = {
     isReady: false,
     baseSubjects: [],
@@ -74,9 +73,7 @@ window.LECTURE_SETUP_CACHE = {
     doctorUID: null
 };
 
-/**
- * دالة الجلب المسبق - تجلب البيانات "مرة واحدة" في الخلفية
- */
+
 window.preFetchAdminSetupData = async function () {
     const user = window.auth?.currentUser;
     if (!user || !sessionStorage.getItem("secure_admin_session_token_v99")) return;
@@ -87,7 +84,6 @@ window.preFetchAdminSetupData = async function () {
         let doctorCollege = "NURS";
         let doctorLevel = null;
 
-        // جلب بيانات الكلية
         const facSnap = await getDoc(doc(db, "faculty_members", user.uid));
         if (facSnap.exists()) {
             const facData = facSnap.data();
@@ -95,12 +91,10 @@ window.preFetchAdminSetupData = async function () {
             doctorLevel = facData.level || null;
         }
 
-        // تحضير المواد والقاعات من الـ Config (سريع جداً)
         let subjectsArray = doctorLevel ? getSubjectsByCollegeAndLevel(doctorCollege, doctorLevel) : getAllSubjectsByCollege(doctorCollege);
         let hallsArray = getHallsByCollege(doctorCollege);
         let detectedLetter = collegeLetterMap[doctorCollege] || "N";
 
-        // جلب النجوم ⭐ من السيرفر في الخلفية
         let enrolledSubjectNames = new Set();
         try {
             const [enrollSnap, sharedSnap] = await Promise.all([
@@ -111,10 +105,8 @@ window.preFetchAdminSetupData = async function () {
             sharedSnap.forEach(d => { if (d.data().subjectName) enrolledSubjectNames.add(d.data().subjectName.trim()); });
         } catch (e) { console.warn("Stars fetch failed"); }
 
-        // دمج النجوم ⭐
         subjectsArray = subjectsArray.map(sub => enrolledSubjectNames.has(sub.trim()) ? `${sub} ⭐` : sub);
 
-        // حفظ في الكاش
         window.LECTURE_SETUP_CACHE = {
             isReady: true,
             baseSubjects: subjectsArray,
@@ -127,12 +119,10 @@ window.preFetchAdminSetupData = async function () {
 };
 
 window.toggleSessionState = async function () {
-    // 1. التحقق من صلاحية الجلسة
     if (!sessionStorage.getItem("secure_admin_session_token_v99")) return;
 
     const btn = document.getElementById('btnToggleSession');
 
-    // 2. إذا كانت هناك محاضرة مفتوحة، ادخل القاعة فوراً
     if (btn && btn.classList.contains('session-open')) {
         if (typeof switchScreen === 'function') switchScreen('screenLiveSession');
         if (typeof startLiveSnapshotListener === 'function') startLiveSnapshotListener();
@@ -142,19 +132,16 @@ window.toggleSessionState = async function () {
     const modal = document.getElementById('customTimeModal');
     if (!modal) return;
 
-    // إظهار المودال فوراً
     modal.style.display = 'flex';
     document.body.style.overflow = 'hidden';
 
     const user = window.auth?.currentUser;
     const cache = window.LECTURE_SETUP_CACHE;
 
-    // 3. حالة الطوارئ: لو الكاش غير جاهز، انتظر الجلب مرة واحدة فقط
     if (!cache.isReady || cache.doctorUID !== user?.uid) {
         await window.preFetchAdminSetupData();
     }
 
-    // 4. دمج التاريخ المحلي (History 🕒) - سريع جداً (Local Storage)
     let finalSubjects = [...window.LECTURE_SETUP_CACHE.baseSubjects];
     let finalHalls = [...window.LECTURE_SETUP_CACHE.baseHalls];
 
@@ -170,7 +157,6 @@ window.toggleSessionState = async function () {
         }
     }
 
-    // 5. تحديث الواجهة (بسرعة البرق)
     const groupEl = document.getElementById('modalGroupInput');
     if (groupEl) groupEl.placeholder = `e.g. 1${window.LECTURE_SETUP_CACHE.detectedLetter}1`;
 
@@ -191,7 +177,6 @@ window.confirmSessionStart = async function () {
         return;
     }
 
-    // ✅ تصحيح: تنظيف اسم المادة من كل الرموز (الساعة، النجمة، العلامة) لضمان البحث الصحيح
     const subject = subjectEl.value
         .replace("🕒 ", "")
         .replace("⭐", "")
@@ -250,7 +235,6 @@ window.confirmSessionStart = async function () {
     const facAvatarEl = document.getElementById('facCurrentAvatar');
     const avatarIconClass = facAvatarEl && facAvatarEl.querySelector('i') ? facAvatarEl.querySelector('i').className : "fa-solid fa-user-doctor";
 
-    // تحديث التاريخ المحلي للمواد والقاعات
     if (typeof SmartHistory !== 'undefined') {
         SmartHistory.push(`history_subjects_${user.uid}`, subject);
         SmartHistory.push(`history_halls_${user.uid}`, hall);
@@ -273,7 +257,6 @@ window.confirmSessionStart = async function () {
         let enrollmentDocId = null;
         let enrolledStudentIds = [];
 
-        // ✅ تصحيح جلب الطلاب: البحث عن الملف الخاص بالدكتور "أو" الملف المشترك (Shared)
         try {
             const enrollmentsRef = collection(db, "subject_enrollments");
             const enrollQ = query(
@@ -284,7 +267,6 @@ window.confirmSessionStart = async function () {
             const enrollSnap = await getDocs(enrollQ);
 
             if (!enrollSnap.empty) {
-                // الأولوية لملف الدكتور، وإذا لم يوجد نأخذ الملف المشترك
                 const targetDoc = enrollSnap.docs.find(d => d.data().doctorUID === user.uid) ||
                     enrollSnap.docs.find(d => d.data().sharedWithAll === true);
 
@@ -299,7 +281,6 @@ window.confirmSessionStart = async function () {
             console.warn("Enrollment link failed:", e);
         }
 
-        // حفظ إعدادات الجلسة في Firestore
         await setDoc(sessionRef, {
             isActive: true,
             isDoorOpen: false,
@@ -351,88 +332,84 @@ window.confirmSessionStart = async function () {
 
 window.closeSessionImmediately = function () {
 
-    // ── 1. إعداد أولي للـ UI ──────────────────────────────────
-    const _getConfirmBtn = () =>
+    const lang = localStorage.getItem('sys_lang') || 'ar';
+    const t = (ar, en) => lang === 'ar' ? ar : en;
+
+    const _getBtn = () =>
         document.getElementById('btnConfirmYes') || document.querySelector('.swal2-confirm');
 
-    const confirmBtn = _getConfirmBtn();
+    const confirmBtn = _getBtn();
     if (confirmBtn) {
+        confirmBtn.innerHTML = t("تأكيد وحفظ ✅", "Confirm & Save ✅");
         confirmBtn.style.pointerEvents = 'auto';
         confirmBtn.style.opacity = '1';
         confirmBtn.disabled = false;
     }
 
-    const lang = localStorage.getItem('sys_lang') || 'ar';
-    const t = (ar, en) => lang === 'ar' ? ar : en;
-
-    if (confirmBtn) confirmBtn.innerText = t("تأكيد وحفظ ✅", "Confirm & Save ✅");
-
-    // ── 2. تأكيد من المستخدم ─────────────────────────────────
     showModernConfirm(
         t("إنهاء الجلسة وحفظ الغياب", "End Session"),
         t("سيتم إغلاق البوابة وحفظ السجلات نهائياً.", "Session will be closed and records saved."),
         _executeClose
     );
 
-    // ── 3. الدالة الأساسية ───────────────────────────────────
     async function _executeClose() {
 
-        // 3a. التحقق من المستخدم
+        // ── [1] التحقق من المستخدم ────────────────────────────────────────
         const user = window.auth?.currentUser;
         if (!user) {
             showToast(t("يجب تسجيل الدخول أولاً", "Please sign in first"), 3000, "#ef4444");
             return;
         }
 
-        // 3b. منع التشغيل المتكرر
-        if (window._sessionClosing) return;
+        // ── [2] Lock مزدوج — منع التنفيذ المتكرر ─────────────────────────
+        if (window._sessionClosing) {
+            showToast(t("⏳ جاري الحفظ...", "⏳ Saving in progress..."), 2000, "#f59e0b");
+            return;
+        }
         window._sessionClosing = true;
 
-        const actionBtn = _getConfirmBtn();
+        const actionBtn = _getBtn();
         _setButtonState(actionBtn, 'loading', lang);
 
         try {
-            // ── 4. iOS FIX: إعادة الاتصال بـ Firestore ──────────
-            await _ensureOnline(db);
 
-            // ── 5. إيقاف المستمعين المفتوحين ─────────────────
+            // ── [3] إغلاق كل المستمعين أولاً ─────────────────────────────
+            //   هذه الخطوة ضرورية قبل أي عملية كتابة
+            //   وجود listeners مفتوحة أثناء batch = INTERNAL ASSERTION FAILED
             _unsubscribeAll();
+            await new Promise(r => setTimeout(r, 300)); // تأخير استقرار SDK
 
-            // ── 6. قراءة البيانات بالتوازي (أسرع بـ 3x) ───────
+            // ── [4] قراءة الجلسة ونقطة الاستئناف بالتوازي ────────────────
             const sessionRef = doc(db, "active_sessions", user.uid);
             const progressRef = doc(db, "active_sessions", user.uid, "close_progress", "current");
 
             const [sessionSnap, progressSnap] = await Promise.all([
-                _getDocWithRetry(sessionRef),
-                _getDocWithRetry(progressRef)
+                _getDocWithRetry(sessionRef, "session"),
+                _getDocWithRetry(progressRef, "progress")
             ]);
 
-            // 6a. التحقق من وجود الجلسة
+            // ── [5] التحقق من صحة الجلسة ──────────────────────────────────
             if (!sessionSnap.exists()) {
                 showToast(t("لم يتم العثور على جلسة", "No session found"), 3000, "#ef4444");
                 return;
             }
-
             const settings = sessionSnap.data();
-
-            // 6b. التحقق من حالة الجلسة
             if (!settings.isActive) {
                 showToast(t("⚠️ الجلسة محفوظة بالفعل", "⚠️ Session already saved"), 3000, "#f59e0b");
                 return;
             }
 
-            // ── 7. فحص نقطة الاستئناف ───────────────────────
+            // ── [6] نقطة الاستئناف ────────────────────────────────────────
             let { lastCompletedBatch, totalBatchesSaved } =
                 await _resolveProgress(progressSnap, progressRef, user.uid);
 
-            // ── 8. بناء البيانات الأساسية ─────────────────────
+            // ── [7] بناء البيانات الوصفية ─────────────────────────────────
             const meta = _buildMeta(settings, user.uid);
 
-            // ── 9. جلب المشاركين والغائبين بالتوازي ──────────
+            // ── [8] جلب المشاركين والمسجلين بالتوازي ─────────────────────
             const partsRef = collection(db, "active_sessions", user.uid, "participants");
-
             const [partsSnap, enrollSnap] = await Promise.all([
-                getDocs(partsRef),
+                _getDocsWithRetry(partsRef, "participants"),
                 _fetchEnrollment(settings)
             ]);
 
@@ -441,67 +418,61 @@ window.closeSessionImmediately = function () {
                 p => p.status === 'active' || p.status === 'on_break'
             );
             const attendedIds = new Set(attendedParticipants.map(p => p.id));
-
             const absentStudentsData = _resolveAbsent(settings, attendedIds, enrollSnap);
 
-            // ── 10. بناء الـ Batches ──────────────────────────
-            const batches = _buildBatches(
-                db, attendedParticipants, absentStudentsData,
-                settings, meta, user.uid
-            );
-
+            // ── [9] بناء الـ Batches ──────────────────────────────────────
+            const batches = _buildBatches(attendedParticipants, absentStudentsData, settings, meta, user.uid);
             const totalBatches = batches.length;
 
-            // 10a. حالة عدم وجود طلاب
+            // ── [10] حالة لا يوجد طلاب ────────────────────────────────────
             if (totalBatches === 0) {
-                await updateDoc(sessionRef, { isActive: false, isDoorOpen: false });
+                await _retryOp(() => updateDoc(sessionRef, { isActive: false, isDoorOpen: false }), "closeEmpty");
                 showToast(t("✅ لا يوجد طلاب، تم إنهاء الجلسة", "✅ No students, session ended"), 3000, "#10b981");
                 setTimeout(() => location.reload(), 1500);
                 return;
             }
 
-            // ── 11. حفظ نقطة البداية في Firestore ────────────
+            // ── [11] تسجيل نقطة البداية في Firestore ─────────────────────
             if (lastCompletedBatch === -1) {
-                await setDoc(progressRef, {
+                await _retryOp(() => setDoc(progressRef, {
                     status: 'in_progress',
                     totalBatches,
                     lastSuccessfulBatch: -1,
                     startedAt: serverTimestamp(),
                     doctorUID: user.uid
-                });
+                }), "initProgress");
             } else if (totalBatches !== totalBatchesSaved) {
-                // عدم تطابق — ابدأ من جديد
+                // عدم تطابق في عدد الـ batches — ابدأ من جديد
                 lastCompletedBatch = -1;
-                await setDoc(progressRef, {
+                await _retryOp(() => setDoc(progressRef, {
                     status: 'in_progress',
                     totalBatches,
                     lastSuccessfulBatch: -1,
                     startedAt: serverTimestamp(),
                     doctorUID: user.uid
-                });
+                }), "resetProgress");
             }
 
-            // ── 12. تنفيذ الـ Batches مع Retry تلقائي ────────
+            // ── [12] تنفيذ الـ Batches ────────────────────────────────────
             for (let i = lastCompletedBatch + 1; i < batches.length; i++) {
-                const { batch, index } = batches[i];
-
                 _setButtonState(actionBtn, 'progress', lang, i + 1, batches.length);
-
-                await _commitWithRetry(batch, index, progressRef);
+                await _commitWithRetry(batches[i].batch, batches[i].index, progressRef);
             }
 
-            // ── 13. تأكيد الإنهاء ─────────────────────────────
-            await updateDoc(progressRef, { status: 'completed', completedAt: serverTimestamp() });
+            // ── [13] تأكيد الإنهاء ────────────────────────────────────────
+            await _retryOp(() => updateDoc(progressRef, {
+                status: 'completed',
+                completedAt: serverTimestamp()
+            }), "markComplete");
 
-            // ── 14. تنظيف أي مشاركين متبقين ─────────────────
-            await _cleanupRemainingParticipants(db, user.uid);
+            // ── [14] تنظيف المشاركين المتبقين ────────────────────────────
+            await _cleanupRemainingParticipants(user.uid);
 
-            // ── 15. رسالة النجاح ──────────────────────────────
+            // ── [15] رسالة النجاح ─────────────────────────────────────────
             showToast(
                 `✅ ${t('تم الحفظ', 'Saved')}: ${attendedParticipants.length} ${t('حضور', 'attended')} | ${absentStudentsData.length} ${t('غياب', 'absent')}`,
                 5000, "#10b981"
             );
-
             setTimeout(() => location.reload(), 1500);
 
         } catch (e) {
@@ -509,49 +480,82 @@ window.closeSessionImmediately = function () {
             _handleError(e, actionBtn, lang);
         } finally {
             window._sessionClosing = false;
-            _setButtonState(_getConfirmBtn(), 'idle', lang);
+            _setButtonState(_getBtn(), 'idle', lang);
         }
     }
 
 
-    // ════════════════════════════════════════════════════════
-    //  Helper Functions
-    // ════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════════════
+    //  ▶ Helper Functions
+    // ═══════════════════════════════════════════════════════════════════════
 
-    /** iOS FIX: ضمان اتصال Firestore قبل أي عملية */
-    async function _ensureOnline(db) {
-        try {
-            if (!navigator.onLine) throw new Error("Device is offline");
-            await enableNetwork(db);
-            await new Promise(r => setTimeout(r, 500)); // iOS needs a moment
-        } catch (e) {
-            console.warn("⚠️ enableNetwork failed:", e.message);
-            // نحاول نكمل - ممكن تكون connected فعلاً
-        }
-    }
-
-    /** إيقاف جميع المستمعين */
+    /**
+     * إيقاف جميع المستمعين
+     * ✅ إضافة unsubscribeSessionListener لعدم فواته
+     */
     function _unsubscribeAll() {
-        ['unsubscribeLiveSnapshot', 'deanRadarUnsubscribe', 'unsubscribeHeaderSession']
-            .forEach(key => {
-                if (window[key]) { window[key](); window[key] = null; }
-            });
+        [
+            'unsubscribeLiveSnapshot',
+            'unsubscribeHeaderSession',
+            'deanRadarUnsubscribe',
+            'unsubscribeSessionListener'
+        ].forEach(key => {
+            if (window[key]) {
+                try { window[key](); } catch (_) { }
+                window[key] = null;
+            }
+        });
+        console.log("🔇 All listeners detached.");
     }
 
-    /** getDoc مع retry تلقائي */
-    async function _getDocWithRetry(ref, maxRetries = 3) {
+    /**
+     * قراءة مستند مع Retry نظيف (بدون enableNetwork)
+     */
+    async function _getDocWithRetry(ref, label = "doc", maxRetries = 3) {
         for (let i = 1; i <= maxRetries; i++) {
             try {
                 return await getDoc(ref);
             } catch (e) {
+                console.warn(`⚠️ getDoc [${label}] attempt ${i}:`, e.message);
                 if (i === maxRetries) throw e;
                 await new Promise(r => setTimeout(r, 800 * i));
-                try { await enableNetwork(db); } catch (_) { }
             }
         }
     }
 
-    /** تحديد نقطة الاستئناف */
+    /**
+     * قراءة Collection مع Retry نظيف
+     */
+    async function _getDocsWithRetry(ref, label = "docs", maxRetries = 3) {
+        for (let i = 1; i <= maxRetries; i++) {
+            try {
+                return await getDocs(ref);
+            } catch (e) {
+                console.warn(`⚠️ getDocs [${label}] attempt ${i}:`, e.message);
+                if (i === maxRetries) throw e;
+                await new Promise(r => setTimeout(r, 800 * i));
+            }
+        }
+    }
+
+    /**
+     * تنفيذ عملية مع Retry نظيف (Generic)
+     */
+    async function _retryOp(fn, label = "op", maxRetries = 3) {
+        for (let i = 1; i <= maxRetries; i++) {
+            try {
+                return await fn();
+            } catch (e) {
+                console.warn(`⚠️ _retryOp [${label}] attempt ${i}:`, e.message);
+                if (i === maxRetries) throw e;
+                await new Promise(r => setTimeout(r, 600 * i));
+            }
+        }
+    }
+
+    /**
+     * تحديد نقطة الاستئناف من آخر حفظ
+     */
     async function _resolveProgress(progressSnap, progressRef, uid) {
         let lastCompletedBatch = -1;
         let totalBatchesSaved = 0;
@@ -561,55 +565,72 @@ window.closeSessionImmediately = function () {
             if (prog.status === 'in_progress' && prog.lastSuccessfulBatch !== undefined) {
                 lastCompletedBatch = prog.lastSuccessfulBatch;
                 totalBatchesSaved = prog.totalBatches;
-                showToast(`🔄 استكمال من نقطة التوقف...`, 4000, "#3b82f6");
+                showToast(t("🔄 استكمال من نقطة التوقف...", "🔄 Resuming from checkpoint..."), 4000, "#3b82f6");
             } else if (prog.status === 'completed') {
-                await deleteDoc(progressRef);
+                await deleteDoc(progressRef).catch(() => { });
             }
         }
 
         return { lastCompletedBatch, totalBatchesSaved };
     }
 
-    /** بناء البيانات الوصفية للجلسة */
+    /**
+     * بناء البيانات الوصفية للجلسة
+     */
     function _buildMeta(settings, uid) {
         const now = new Date();
         const d = String(now.getDate()).padStart(2, '0');
         const m = String(now.getMonth() + 1).padStart(2, '0');
         const y = now.getFullYear();
+        const rawSubject = settings.allowedSubject || "General";
         return {
             fixedDateStr: `${d}/${m}/${y}`,
+            dateKey: `${d}-${m}-${y}`,
             closeTimeStr: now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
             year: y.toString(),
-            rawSubject: settings.allowedSubject || "General",
-            cleanSubKey: (settings.allowedSubject || "General").trim()
-                .replace(/\s+/g, '_').replace(/[^\w\u0600-\u06FF]/g, ''),
+            rawSubject,
+            cleanSubKey: rawSubject.trim()
+                .replace(/\s+/g, '_')
+                .replace(/[^\w\u0600-\u06FF]/g, ''),
             doctorName: settings.doctorName || "Doctor",
             college: settings.college || "NURS",
             targetGroups: settings.targetGroups?.length ? settings.targetGroups : ["General"],
-            hall: settings.hall,
+            hall: settings.hall || "",
         };
     }
 
-    /** جلب بيانات المسجلين */
+    /**
+     * جلب بيانات المسجلين في المادة
+     */
     async function _fetchEnrollment(settings) {
         if (!settings.enrollmentDocId || !settings.enrolledStudentIds?.length) return null;
         try {
-            return await getDoc(doc(db, "subject_enrollments", settings.enrollmentDocId));
+            return await _retryOp(
+                () => getDoc(doc(db, "subject_enrollments", settings.enrollmentDocId)),
+                "enrollment"
+            );
         } catch (e) {
             console.warn("Enrollment fetch skipped:", e.message);
             return null;
         }
     }
 
-    /** حساب الغائبين */
+    /**
+     * حساب الغائبين من قائمة المسجلين
+     */
     function _resolveAbsent(settings, attendedIds, enrollSnap) {
         if (!settings.enrolledStudentIds?.length || !enrollSnap?.exists()) return [];
-        const absentIds = new Set(settings.enrolledStudentIds.filter(id => !attendedIds.has(id)));
+        const absentIds = new Set(
+            settings.enrolledStudentIds.filter(id => !attendedIds.has(id))
+        );
         return (enrollSnap.data().students || []).filter(s => absentIds.has(s.id));
     }
 
-    /** بناء كل الـ Batches */
-    function _buildBatches(db, attended, absent, settings, meta, uid) {
+    /**
+     * بناء كل الـ Batches (حد 400 عملية لكل batch)
+     * ✅ كل العمليات محفوظة: حاضرون، غائبون، إحصائيات، إغلاق الجلسة
+     */
+    function _buildBatches(attended, absent, settings, meta, uid) {
         const BATCH_LIMIT = 400;
         const batches = [];
         let currentBatch = writeBatch(db);
@@ -629,61 +650,90 @@ window.closeSessionImmediately = function () {
             if (++opCount >= BATCH_LIMIT) flush();
         };
 
-        const { fixedDateStr, closeTimeStr, rawSubject, cleanSubKey,
-            doctorName, college, targetGroups, hall, year } = meta;
-        const dateKey = fixedDateStr.replace(/\//g, '-');
+        const {
+            fixedDateStr, dateKey, closeTimeStr,
+            rawSubject, cleanSubKey,
+            doctorName, college, targetGroups, hall, year
+        } = meta;
+
         const sessionRef = doc(db, "active_sessions", uid);
 
-        // ── الحاضرون ─────────────────────────────────────────
+        // ── الحاضرون ──────────────────────────────────────────────────────
         attended.forEach(p => {
             const recID = `${p.id}_${dateKey}_${cleanSubKey}`;
             const finalGroup = (p.group && p.group !== "General") ? p.group : targetGroups[0];
-            const notes = p.isUnruly ? "غير منضبط - مشاغب"
-                : p.isUniformViolation ? "مخالفة زي" : "منضبط";
+            const notes = p.isUnruly
+                ? "غير منضبط - مشاغب"
+                : p.isUniformViolation
+                    ? "مخالفة زي"
+                    : "منضبط";
 
             const payload = {
-                id: p.id, name: p.name, subject: rawSubject, college,
-                hall, group: finalGroup, date: fixedDateStr,
+                id: p.id,
+                name: p.name,
+                subject: rawSubject,
+                college,
+                hall,
+                group: finalGroup,
+                date: fixedDateStr,
                 time_str: p.time_str || closeTimeStr,
-                segment_count: p.segment_count || 1, notes,
-                timestamp: serverTimestamp(), status: "ATTENDED",
-                doctorUID: uid, doctorName,
-                feedback_status: "pending", feedback_rating: 0,
+                segment_count: p.segment_count || 1,
+                notes,
+                timestamp: serverTimestamp(),
+                status: "ATTENDED",
+                doctorUID: uid,
+                doctorName,
+                feedback_status: "pending",
+                feedback_rating: 0,
                 isUnruly: p.isUnruly || false,
                 isUniformViolation: p.isUniformViolation || false
             };
 
+            // حفظ في كلا المجموعتين
             addOp(b => b.set(doc(db, `attendance_${college}`, recID), payload));
             addOp(b => b.set(doc(db, "attendance", recID), payload));
 
-            const statsUpdate = {
-                group: finalGroup, studentID: p.id, last_updated: serverTimestamp(),
+            // إحصائيات الطالب
+            addOp(b => b.set(doc(db, "student_stats", p.uid || p.id), {
+                group: finalGroup,
+                studentID: p.id,
+                last_updated: serverTimestamp(),
                 attended: { [cleanSubKey]: increment(1) },
                 ...(p.isUnruly && { cumulative_unruly: increment(1) }),
                 ...(p.isUniformViolation && { cumulative_uniform: increment(1) })
-            };
-            addOp(b => b.set(doc(db, "student_stats", p.uid || p.id), statsUpdate, { merge: true }));
+            }, { merge: true }));
+
+            // حذف من قائمة المشاركين الحية
             addOp(b => b.delete(doc(db, "active_sessions", uid, "participants", p.id)));
         });
 
-        // ── الغائبون ──────────────────────────────────────────
+        // ── الغائبون ──────────────────────────────────────────────────────
         absent.forEach(student => {
             const absentID = `${student.id}_${dateKey}_${cleanSubKey}_ABSENT`;
-            const absentRef = doc(db, `attendance_${college}`, absentID);
-            addOp(b => b.set(absentRef, {
-                id: student.id, name: student.name, subject: rawSubject,
-                college, hall,
+            addOp(b => b.set(doc(db, `attendance_${college}`, absentID), {
+                id: student.id,
+                name: student.name,
+                subject: rawSubject,
+                college,
+                hall,
                 group: student.group || targetGroups[0] || "General",
-                date: fixedDateStr, time_str: "--:--", notes: "غائب",
-                timestamp: serverTimestamp(), status: "ABSENT",
-                doctorUID: uid, doctorName,
-                feedback_status: "none", isUnruly: false, isUniformViolation: false
+                date: fixedDateStr,
+                time_str: "--:--",
+                notes: "غائب",
+                timestamp: serverTimestamp(),
+                status: "ABSENT",
+                doctorUID: uid,
+                doctorName,
+                feedback_status: "none",
+                isUnruly: false,
+                isUniformViolation: false
             }));
         });
 
-        // ── إحصائيات المجموعات ────────────────────────────────
+        // ── إحصائيات المجموعات ────────────────────────────────────────────
         targetGroups.forEach(groupName => {
             if (!groupName) return;
+
             addOp(b => b.set(doc(db, "groups_stats", groupName), {
                 [`subjects.${cleanSubKey}.total_sessions_held`]: increment(1),
                 last_updated: serverTimestamp()
@@ -691,101 +741,149 @@ window.closeSessionImmediately = function () {
 
             const counterID = `${dateKey}_${cleanSubKey}_${groupName}`;
             addOp(b => b.set(doc(db, "course_counters", counterID), {
-                subject: rawSubject, targetGroups: [groupName], date: fixedDateStr,
-                timestamp: serverTimestamp(), doctorUID: uid, academic_year: year
+                subject: rawSubject,
+                targetGroups: [groupName],
+                date: fixedDateStr,
+                timestamp: serverTimestamp(),
+                doctorUID: uid,
+                academic_year: year
             }));
         });
 
-        // ── إغلاق الجلسة ─────────────────────────────────────
+        // ── إغلاق الجلسة (آخر عملية دائماً) ─────────────────────────────
         addOp(b => b.update(sessionRef, { isActive: false, isDoorOpen: false }));
 
-        flush(); // أي عمليات متبقية
+        flush(); // تفريغ أي عمليات متبقية
         return batches;
     }
 
-    /** تنفيذ Batch مع Exponential Backoff Retry */
+    /**
+     * تنفيذ Batch واحد مع Exponential Backoff
+     * ✅ لا enableNetwork — السبب الجذري للخطأ
+     */
     async function _commitWithRetry(batch, batchIdx, progressRef, maxRetries = 4) {
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
                 await batch.commit();
-                await updateDoc(progressRef, {
+
+                // تسجيل نجاح هذا الـ batch كنقطة استئناف
+                await _retryOp(() => updateDoc(progressRef, {
                     lastSuccessfulBatch: batchIdx,
                     lastUpdate: serverTimestamp()
-                });
-                return;
+                }), `progress_${batchIdx}`);
+
+                return; // نجح — خروج
+
             } catch (error) {
-                console.warn(`⚠️ Batch ${batchIdx} — attempt ${attempt}:`, error.message);
+                console.warn(`⚠️ Batch ${batchIdx} — attempt ${attempt}/${maxRetries}:`, error.message);
+
                 if (attempt === maxRetries) {
+                    // تسجيل الفشل في Firestore للمراجعة
                     await updateDoc(progressRef, {
-                        status: 'failed', failedBatch: batchIdx, error: error.message
+                        status: 'failed',
+                        failedBatch: batchIdx,
+                        error: error.message
                     }).catch(() => { });
+
                     throw new Error(
                         lang === 'ar'
                             ? `فشل الحفظ في الدفعة ${batchIdx + 1}. اضغط "إعادة المحاولة".`
                             : `Batch ${batchIdx + 1} failed. Tap Retry.`
                     );
                 }
-                // iOS: أعد الاتصال قبل المحاولة التالية
-                try { await enableNetwork(db); } catch (_) { }
-                await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
+
+                // Exponential Backoff فقط — بدون لمس الشبكة
+                await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt - 1)));
             }
         }
     }
 
-    /** تنظيف أي مشاركين متبقين */
-    async function _cleanupRemainingParticipants(db, uid) {
+    /**
+     * تنظيف أي مشاركين لم يُحذفوا في الـ batch
+     */
+    async function _cleanupRemainingParticipants(uid) {
         try {
-            const remaining = await getDocs(collection(db, "active_sessions", uid, "participants"));
-            if (!remaining.empty) {
-                const batch = writeBatch(db);
-                remaining.forEach(d => batch.delete(d.ref));
-                await batch.commit();
-            }
+            const remaining = await getDocs(
+                collection(db, "active_sessions", uid, "participants")
+            );
+            if (remaining.empty) return;
+
+            const batch = writeBatch(db);
+            remaining.forEach(d => batch.delete(d.ref));
+            await batch.commit();
+            console.log(`🧹 Cleaned ${remaining.size} leftover participants.`);
         } catch (e) {
             console.warn("Cleanup warning:", e.message);
         }
     }
 
-    /** معالجة الأخطاء */
+    /**
+     * معالجة الأخطاء مع تصنيف ذكي
+     */
     function _handleError(e, actionBtn, lang) {
         const t = (ar, en) => lang === 'ar' ? ar : en;
+
         if (e.code === 'permission-denied') {
-            showToast(t(
-                "🚫 خطأ في الصلاحيات — راجع قواعد Firestore",
-                "🚫 Permission denied — check Firestore rules"
-            ), 7000, "#ef4444");
+            showToast(
+                t("🚫 خطأ في الصلاحيات — راجع قواعد Firestore",
+                    "🚫 Permission denied — check Firestore rules"),
+                7000, "#ef4444"
+            );
         } else if (!navigator.onLine) {
-            showToast(t(
-                "📵 لا يوجد اتصال بالإنترنت. اتصل وأعد المحاولة.",
-                "📵 No internet connection. Reconnect and retry."
-            ), 5000, "#f59e0b");
+            showToast(
+                t("📵 لا يوجد اتصال بالإنترنت. اتصل وأعد المحاولة.",
+                    "📵 No internet connection. Reconnect and retry."),
+                5000, "#f59e0b"
+            );
+        } else if (e.code === 'unavailable') {
+            showToast(
+                t("⚠️ Firestore غير متاح مؤقتاً. أعد المحاولة.",
+                    "⚠️ Firestore temporarily unavailable. Retry."),
+                5000, "#f59e0b"
+            );
         } else {
             showToast(t("خطأ: ", "Error: ") + e.message, 4000, "#ef4444");
         }
+
         if (actionBtn) {
             actionBtn.innerHTML = t("⟳ إعادة المحاولة", "⟳ Retry");
             actionBtn.style.pointerEvents = 'auto';
             actionBtn.style.opacity = '1';
+            actionBtn.disabled = false;
         }
     }
 
-    /** التحكم في حالة الزر */
+    /**
+     * التحكم في حالة زر التأكيد
+     */
     function _setButtonState(btn, state, lang, current, total) {
         if (!btn) return;
         const t = (ar, en) => lang === 'ar' ? ar : en;
         const states = {
-            loading: { html: `<i class="fa-solid fa-circle-notch fa-spin"></i> ${t("جاري المعالجة...", "Processing...")}`, pointer: 'none', opacity: '0.7' },
-            progress: { html: `<i class="fa-solid fa-circle-notch fa-spin"></i> ${current}/${total}`, pointer: 'none', opacity: '0.7' },
-            idle: { html: t("تأكيد وحفظ ✅", "Confirm & Save ✅"), pointer: 'auto', opacity: '1' }
+            loading: {
+                html: `<i class="fa-solid fa-circle-notch fa-spin"></i> ${t("جاري المعالجة...", "Processing...")}`,
+                pointer: 'none',
+                opacity: '0.7'
+            },
+            progress: {
+                html: `<i class="fa-solid fa-circle-notch fa-spin"></i> ${current}/${total}`,
+                pointer: 'none',
+                opacity: '0.7'
+            },
+            idle: {
+                html: t("تأكيد وحفظ ✅", "Confirm & Save ✅"),
+                pointer: 'auto',
+                opacity: '1'
+            }
         };
         const s = states[state];
-        if (s) {
-            btn.innerHTML = s.html;
-            btn.style.pointerEvents = s.pointer;
-            btn.style.opacity = s.opacity;
-            btn.disabled = s.pointer === 'none';
-        }
+        if (!s) return;
+        btn.innerHTML = s.html;
+        btn.style.pointerEvents = s.pointer;
+        btn.style.opacity = s.opacity;
+        btn.disabled = s.pointer === 'none';
     }
+
 };
 
 // ════════════════════════════════════════════════════════
