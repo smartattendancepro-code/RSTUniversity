@@ -200,10 +200,11 @@ window.confirmSessionStart = async function () {
         } catch (e) { }
 
         const expectedLetter = collegeLetterMap[doctorCollegeForGroup] || "N";
-        const groupPattern = new RegExp(`^[1-4]${expectedLetter}\\d{1,2}$`);
+        const groupPattern = new RegExp(`^[1-4][A-Z]\\d{1,2}$`);
+
 
         if (!groupPattern.test(rawGroup)) {
-            showToast(`⚠️ Invalid Group Format! Must be like: 1${expectedLetter}1`, 4000, "#ef4444");
+            showToast(`⚠️ Invalid Group Format! Must be like: 1N1`, 4000, "#ef4444");
             if (groupEl) {
                 groupEl.style.borderColor = "#ef4444";
                 groupEl.focus();
