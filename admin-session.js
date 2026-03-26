@@ -374,11 +374,10 @@ window.closeSessionImmediately = function () {
 
         try {
 
-            // ── [3] إغلاق كل المستمعين أولاً ─────────────────────────────
-            //   هذه الخطوة ضرورية قبل أي عملية كتابة
-            //   وجود listeners مفتوحة أثناء batch = INTERNAL ASSERTION FAILED
             _unsubscribeAll();
-            await new Promise(r => setTimeout(r, 300)); // تأخير استقرار SDK
+            await Promise.resolve();
+            await Promise.resolve();
+            await new Promise(r => setTimeout(r, 1000)); // تأخير استقرار SDK
 
             // ── [4] قراءة الجلسة ونقطة الاستئناف بالتوازي ────────────────
             const sessionRef = doc(db, "active_sessions", user.uid);
@@ -499,7 +498,8 @@ window.closeSessionImmediately = function () {
             'unsubscribeLiveSnapshot',
             'unsubscribeHeaderSession',
             'deanRadarUnsubscribe',
-            'unsubscribeSessionListener'
+            'unsubscribeSessionListener',
+            'unsubscribeGlobalSettings'
         ].forEach(key => {
             if (window[key]) {
                 try { window[key](); } catch (_) { }
@@ -1076,7 +1076,11 @@ window.listenToSessionState = function () {
     }
 
     const globalSettingsRef = doc(db, "settings", "control_panel");
-    onSnapshot(globalSettingsRef, (docSnap) => {
+    if (window.unsubscribeGlobalSettings) {
+        window.unsubscribeGlobalSettings();
+        window.unsubscribeGlobalSettings = null;
+    }
+    window.unsubscribeGlobalSettings = onSnapshot(globalSettingsRef, (docSnap) => {
         if (docSnap.exists()) {
             const data = docSnap.data();
 
