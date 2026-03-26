@@ -30,11 +30,15 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-const db = initializeFirestore(app, {
-    localCache: persistentLocalCache({
-        tabManager: persistentMultipleTabManager()
-    })
-});
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+
+const db = isIOS
+    ? getFirestore(app)
+    : initializeFirestore(app, {
+        localCache: persistentLocalCache({
+            tabManager: persistentMultipleTabManager()
+        })
+      });
 
 const auth = getAuth(app);
 
@@ -193,4 +197,3 @@ window.switchScreen = function (screenId) {
         }
     }
 };
-
