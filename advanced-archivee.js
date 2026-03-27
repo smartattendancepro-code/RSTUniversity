@@ -9,7 +9,9 @@ import {
 
 window.ARCHIVE_SETUP_CACHE = {
     subjects: [],
-    isReady: false
+    isReady: false,
+    lastFetch: null,
+    TTL: 5 * 60 * 1000
 };
 
 window.preFetchArchiveData = async function () {
@@ -35,6 +37,7 @@ window.preFetchArchiveData = async function () {
 
         window.ARCHIVE_SETUP_CACHE.subjects = [...subjects].sort((a, b) => a.localeCompare(b, 'ar'));
         window.ARCHIVE_SETUP_CACHE.isReady = true;
+        window.ARCHIVE_SETUP_CACHE.lastFetch = Date.now();
         console.log("📊 Archive Cache Ready:", window.ARCHIVE_SETUP_CACHE.subjects.length, "subjects");
     } catch (e) { console.warn("Archive Fetch Error", e); }
 };
@@ -191,9 +194,14 @@ window.openAdvancedArchiveModal = async function () {
     select.innerHTML = '<option value="" disabled selected>⏳ Loading subjects...</option>';
     if (searchInput) searchInput.value = '';
 
-    window.ARCHIVE_SETUP_CACHE.isReady = false;
-    await window.preFetchArchiveData();
+    const cacheNow = Date.now();
+    const cacheExpired = !window.ARCHIVE_SETUP_CACHE.lastFetch ||
+        (cacheNow - window.ARCHIVE_SETUP_CACHE.lastFetch) > window.ARCHIVE_SETUP_CACHE.TTL;
 
+    if (!window.ARCHIVE_SETUP_CACHE.isReady || cacheExpired) {
+        window.ARCHIVE_SETUP_CACHE.isReady = false;
+        await window.preFetchArchiveData();
+    }
     let subjects = [];
 
     if (window.ARCHIVE_SETUP_CACHE && window.ARCHIVE_SETUP_CACHE.isReady) {
@@ -230,6 +238,7 @@ window.openAdvancedArchiveModal = async function () {
 
                 window.ARCHIVE_SETUP_CACHE.subjects = subjects.sort((a, b) => a.localeCompare(b, 'ar'));
                 window.ARCHIVE_SETUP_CACHE.isReady = true;
+                window.ARCHIVE_SETUP_CACHE.lastFetch = Date.now();
             }
         } catch (e) {
             console.warn("⚠️ Failed to fetch archive subjects:", e);
@@ -333,20 +342,28 @@ window.generateArchiveReport = async function () {
         for (let i = 0; i < datesList.length; i += CHUNK_SIZE) {
             const chunk = datesList.slice(i, i + CHUNK_SIZE);
 
-            // ✅ بنبحث في كل الكليات في نفس الوقت
-            const promises = ALL_COLLEGES.map(college =>
-                getDocs(query(
-                    collection(window.db, `attendance_${college}`),
-                    where("subject", "==", subjectName),
-                    where("doctorUID", "==", user.uid),
-                    where("date", "in", chunk)
-                ))
-            );
+            const primarySnap = await getDocs(query(
+                collection(window.db, `attendance_${doctorCollege}`),
+                where("subject", "==", subjectName),
+                where("doctorUID", "==", user.uid),
+                where("date", "in", chunk)
+            ));
 
-            const results = await Promise.all(promises);
-            results.forEach(snap => {
-                snap.forEach(d => allRecords.push(d.data()));
-            });
+            primarySnap.forEach(d => allRecords.push(d.data()));
+
+            if (primarySnap.empty) {
+                const otherColleges = ALL_COLLEGES.filter(c => c !== doctorCollege);
+                const promises = otherColleges.map(college =>
+                    getDocs(query(
+                        collection(window.db, `attendance_${college}`),
+                        where("subject", "==", subjectName),
+                        where("doctorUID", "==", user.uid),
+                        where("date", "in", chunk)
+                    ))
+                );
+                const results = await Promise.all(promises);
+                results.forEach(snap => snap.forEach(d => allRecords.push(d.data())));
+            }
         }
 
         if (allRecords.length === 0) {
