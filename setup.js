@@ -2,7 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 import {
     getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
     collection, doc, addDoc, setDoc, getDoc, getDocs, updateDoc, deleteDoc,
-    onSnapshot, query, where, orderBy, limit, writeBatch, serverTimestamp,
+    onSnapshot, query, where, orderBy, limit, writeBatch, serverTimestamp, memoryLocalCache,
     Timestamp, arrayUnion, arrayRemove, increment
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
@@ -32,13 +32,17 @@ const app = initializeApp(firebaseConfig);
 
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
 
-const db = isIOS
-    ? getFirestore(app)
-    : initializeFirestore(app, {
-        localCache: persistentLocalCache({
+const db = initializeFirestore(app, {
+    // حل مشكلة التخزين (IndexedDB) للأيفون - (كلام المساعد الآخر صح)
+    localCache: isIOS
+        ? memoryLocalCache()
+        : persistentLocalCache({
             tabManager: persistentMultipleTabManager()
-        })
-      });
+          }),
+    
+    // حل مشكلة انقطاع الاتصال في سفاري - (كلامي أنا أضمن لظروفك)
+    experimentalForceLongPolling: true 
+});
 
 const auth = getAuth(app);
 
@@ -129,7 +133,7 @@ window.showError = function (msg, isPermanent = false) {
 window.performLogout = async function () {
     try {
         const deviceId = localStorage.getItem("unique_device_id_v3");
-        const currentLang = localStorage.getItem("sys_lang"); 
+        const currentLang = localStorage.getItem("sys_lang");
 
         await signOut(window.auth);
 
@@ -140,7 +144,7 @@ window.performLogout = async function () {
             localStorage.setItem("unique_device_id_v3", deviceId);
         }
         if (currentLang) {
-            localStorage.setItem("sys_lang", currentLang); 
+            localStorage.setItem("sys_lang", currentLang);
         }
 
         if (typeof window.showToast === 'function') {
@@ -197,3 +201,4 @@ window.switchScreen = function (screenId) {
         }
     }
 };
+
