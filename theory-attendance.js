@@ -7,6 +7,8 @@ const _theoryCache = {
     subjects: null,
     collegeCode: null,
     doctorName: null,
+    lastFetch: null,
+    TTL: 2 * 60 * 60 * 1000
 };
 
 window.clearTheoryAttendanceCache = function () {
@@ -42,6 +44,7 @@ async function _loadTheoryCache(user) {
 
     _theoryCache.uid = user.uid;
     _theoryCache.subjects = subjects;
+    _theoryCache.lastFetch = Date.now();
 }
 
 let _excelLoaderPromise = null;
@@ -111,7 +114,11 @@ window.filterTheorySubjects = function (searchQuery) {
 
 // ─── فتح المودال ───
 window.openTheoryAttendanceModal = async function () {
-    _theoryCache.uid = null; // force refresh كل مرة
+    const cacheNow = Date.now();
+    const cacheExpired = !_theoryCache.lastFetch ||
+        (cacheNow - _theoryCache.lastFetch) > _theoryCache.TTL;
+
+    if (cacheExpired) _theoryCache.uid = null;
 
     const modal = document.getElementById('theoryAttendanceModal');
     const select = document.getElementById('theorySubjectSelect');
