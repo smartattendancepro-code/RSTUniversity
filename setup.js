@@ -33,15 +33,16 @@ const app = initializeApp(firebaseConfig);
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
 
 const db = initializeFirestore(app, {
-    // حل مشكلة التخزين (IndexedDB) للأيفون - (كلام المساعد الآخر صح)
-    localCache: isIOS
-        ? memoryLocalCache()
+    // استخدم التخزين المحلي البسيط بدون تعقيد الـ Tabs مؤقتاً لحل الانهيار
+    localCache: isIOS 
+        ? memoryLocalCache() 
         : persistentLocalCache({
-            tabManager: persistentMultipleTabManager()
+            // حذفنا tabManager لضمان عدم حدوث تضارب في المتصفح
           }),
     
-    // حل مشكلة انقطاع الاتصال في سفاري - (كلامي أنا أضمن لظروفك)
-    experimentalForceLongPolling: true 
+    experimentalForceLongPolling: true,
+    // أضف هذا السطر لضمان عدم تعليق الاتصال
+    useFetchStreams: false 
 });
 
 const auth = getAuth(app);
@@ -201,4 +202,3 @@ window.switchScreen = function (screenId) {
         }
     }
 };
-
