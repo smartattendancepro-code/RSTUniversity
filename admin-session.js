@@ -12,7 +12,17 @@ import {
 import { i18n } from './i18n.js';
 import { applyVipTheme } from './VipThemeManager.js';
 
-
+async function _getDocWithRetry(ref, label = "doc", maxRetries = 3) {
+    for (let i = 1; i <= maxRetries; i++) {
+        try {
+            return await getDoc(ref);
+        } catch (e) {
+            console.warn(`⚠️ محاولة رقم ${i} لفشل الاتصال:`, label);
+            if (i === maxRetries) throw e;
+            await new Promise(r => setTimeout(r, 800 * i));
+        }
+    }
+}
 
 window.LECTURE_SETUP_CACHE = { subjects: [], halls: [], isReady: false };
 
@@ -45,7 +55,7 @@ window.verifyAdminRole = async function () {
 
     try {
         const docRef = doc(db, "faculty_members", user.uid);
-        const docSnap = await getDoc(docRef);
+        const docSnap = await _getDocWithRetry(docRef, "verify_admin");
 
         if (docSnap.exists()) {
             const data = docSnap.data();
@@ -84,7 +94,7 @@ window.preFetchAdminSetupData = async function () {
         let doctorCollege = "NURS";
         let doctorLevel = null;
 
-        const facSnap = await getDoc(doc(db, "faculty_members", user.uid));
+        const facSnap = await _getDocWithRetry(doc(db, "faculty_members", user.uid), "prefetch_fac");
         if (facSnap.exists()) {
             const facData = facSnap.data();
             doctorCollege = facData.college || "NURS";
@@ -374,12 +384,7 @@ window.closeSessionImmediately = function () {
 
         try {
 
-            _unsubscribeAll();
-            await Promise.resolve();
-            await Promise.resolve();
-            await new Promise(r => setTimeout(r, 1000)); // تأخير استقرار SDK
-
-            // ── [4] قراءة الجلسة ونقطة الاستئناف بالتوازي ────────────────
+            // ── [1] اقرأ البيانات الأول قبل قطع الاتصال ──────────────────
             const sessionRef = doc(db, "active_sessions", user.uid);
             const progressRef = doc(db, "active_sessions", user.uid, "close_progress", "current");
 
@@ -387,6 +392,9 @@ window.closeSessionImmediately = function () {
                 _getDocWithRetry(sessionRef, "session"),
                 _getDocWithRetry(progressRef, "progress")
             ]);
+
+            // ── [2] بعد ما البيانات اتقرأت، وقف المستمعين ────────────────
+            _unsubscribeAll();
 
             // ── [5] التحقق من صحة الجلسة ──────────────────────────────────
             if (!sessionSnap.exists()) {
