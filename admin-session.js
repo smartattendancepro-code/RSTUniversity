@@ -1523,7 +1523,7 @@ window.openDoorActionModal = function () {
     modal.style.display = 'flex';
 };
 
-wwindow.confirmOpenDoor = async function (seconds) {
+window.confirmOpenDoor = async function (seconds) {
     const user = window.auth?.currentUser;
     if (!user) return;
 
