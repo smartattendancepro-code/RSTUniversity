@@ -1523,8 +1523,9 @@ window.openDoorActionModal = function () {
     modal.style.display = 'flex';
 };
 
-window.confirmOpenDoor = async function (seconds) {
+wwindow.confirmOpenDoor = async function (seconds) {
     const user = window.auth?.currentUser;
+    if (!user) return;
 
     const maxInput = document.getElementById('doorMaxLimitInput');
     let maxStudentsVal = 9999;
@@ -1532,29 +1533,61 @@ window.confirmOpenDoor = async function (seconds) {
     if (maxInput && maxInput.value.trim() !== "") {
         maxStudentsVal = parseInt(maxInput.value);
     }
+
     const newCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const now = Date.now(); 
+
+    const durationMs = seconds === -1 ? -1 : (seconds * 1000);
+    const expiresAt = seconds === -1 ? -1 : (now + durationMs);
 
     try {
         const sessionRef = doc(db, "active_sessions", user.uid);
+
+        const currentSubject = document.getElementById('liveSubjectTag')?.innerText || "Subject";
+        const currentHall = document.getElementById('liveHallTag')?.innerText || "Hall";
+        const docName = document.getElementById('liveDocName')?.innerText || "Doctor";
 
         await updateDoc(sessionRef, {
             isDoorOpen: true,
             sessionCode: newCode,
             startTime: serverTimestamp(),
             duration: seconds,
-            maxStudents: maxStudentsVal
+            maxStudents: maxStudentsVal,
+            codeOpenedAt: now,
+            codeClosedAt: expiresAt
         });
 
-        document.getElementById('doorDurationModal').style.display = 'none';
-        document.getElementById('liveSessionCodeDisplay').innerText = newCode;
-        document.getElementById('doorStatusText').innerHTML = '<i class="fa-solid fa-door-open fa-fade"></i>';
+        const codeLogRef = doc(db, "issued_codes_logs", newCode);
+        await setDoc(codeLogRef, {
+            code: newCode,
+            doctorId: user.uid,
+            doctorName: docName,
+            subject: currentSubject,
+            hall: currentHall,
+            openedAt: now,      
+            expiresAt: expiresAt, 
+            isInfinite: seconds === -1,
+            timestamp: serverTimestamp()
+        });
+
+        if (document.getElementById('doorDurationModal'))
+            document.getElementById('doorDurationModal').style.display = 'none';
+
+        if (document.getElementById('liveSessionCodeDisplay'))
+            document.getElementById('liveSessionCodeDisplay').innerText = newCode;
+
+        if (document.getElementById('doorStatusText'))
+            document.getElementById('doorStatusText').innerHTML = '<i class="fa-solid fa-door-open fa-fade"></i> OPEN';
 
         let limitMsg = (maxStudentsVal === 9999) ? "عدد مفتوح" : `حد أقصى: ${maxStudentsVal}`;
-        showToast(`🔓 تم الفتح لمدة ${seconds}ث (${limitMsg})`, 4000, "#10b981");
+        let timeMsg = seconds === -1 ? "وقت مفتوح" : `${seconds} ثانية`;
+        showToast(`🔓 تم فتح البوابة بالكود [${newCode}] لمدة ${timeMsg}`, 4000, "#10b981");
+
+        console.log(`✅ Code ${newCode} registered for offline verification.`);
 
     } catch (e) {
-        console.error(e);
-        showToast("خطأ في فتح البوابة", 3000, "#ef4444");
+        console.error("Critical Door Open Error:", e);
+        showToast("❌ خطأ في فتح البوابة.. تأكد من الاتصال", 3000, "#ef4444");
     }
 };
 
